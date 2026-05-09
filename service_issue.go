@@ -19,6 +19,13 @@ import (
 // Use Service.Close to wait for in-flight background work — required for
 // one-shot CLI invocations and graceful daemon shutdown.
 func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result, error) {
+	return svc.runIssueWorkflow(ctx, req)
+}
+
+// runIssueWorkflow is the high-level lifecycle for stateful issue tasks. It
+// owns issue validation and claim behavior before launching the lower-level
+// Claude execution step in the background.
+func (svc *service) runIssueWorkflow(ctx context.Context, req RunIssueRequest) (*Result, error) {
 	if svc.github == nil {
 		return nil, ErrGitHubUnavailable
 	}
@@ -66,9 +73,9 @@ func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result,
 			zap.String("model", selectedModel),
 		)
 
-		result, runErr := svc.execute(bgCtx, exec)
+		result, runErr := svc.runIssueExecution(bgCtx, exec)
 		if runErr != nil {
-			log.Error("execute failed", zap.Error(runErr))
+			log.Error("issue execution failed", zap.Error(runErr))
 			svc.reportIssueFailure(bgCtx, slug, req.IssueNumber, runErr.Error())
 			return
 		}
@@ -85,6 +92,10 @@ func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result,
 		ID:     runID,
 		Output: fmt.Sprintf("Issue %s#%d accepted; claude-runner is processing in the background.", slug, req.IssueNumber),
 	}, nil
+}
+
+func (svc *service) runIssueExecution(ctx context.Context, req RunRequest) (*Result, error) {
+	return svc.runClaudeInTemporaryWorkspace(ctx, req)
 }
 
 func validateIssue(issue *Issue) error {
