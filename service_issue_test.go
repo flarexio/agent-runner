@@ -359,6 +359,7 @@ func TestBuildIssuePromptIncludesContext(t *testing.T) {
 		"Add feature X",
 		"Please implement feature X",
 		"open a pull request",
+		"Do not merge any pull requests",
 		"Run the relevant tests",
 	} {
 		if !strings.Contains(prompt, want) {

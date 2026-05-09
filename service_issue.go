@@ -191,6 +191,7 @@ func buildIssuePrompt(repo string, issue *Issue) string {
 	b.WriteString(issue.Body)
 	b.WriteString("\n\nInstructions:\n")
 	b.WriteString("- Implement the task described in the issue and open a pull request for review.\n")
+	b.WriteString("- Do not merge any pull requests.\n")
 	b.WriteString("- Run the relevant tests after your changes and report which commands you ran and the outcomes in your final summary.\n")
 	b.WriteString("- Keep changes scoped to what the issue asks for.\n")
 	return b.String()
