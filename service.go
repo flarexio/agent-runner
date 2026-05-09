@@ -74,13 +74,21 @@ func (svc *service) Run(ctx context.Context, req RunRequest) (*Result, error) {
 	if req.Prompt == "" {
 		return nil, ErrInvalidPrompt
 	}
-	return svc.execute(ctx, req)
+	return svc.runStateless(ctx, req)
 }
 
-// execute clones (when needed), generates a diff (when applicable), composes
-// the final prompt, and runs claude. Used by Run and by the background
-// portion of RunIssue.
-func (svc *service) execute(ctx context.Context, req RunRequest) (*Result, error) {
+// runStateless is the high-level lifecycle for prompt-only and CI / PR review
+// jobs. It intentionally stays synchronous and uses a throwaway workspace when
+// a repository is supplied.
+func (svc *service) runStateless(ctx context.Context, req RunRequest) (*Result, error) {
+	return svc.runClaudeInTemporaryWorkspace(ctx, req)
+}
+
+// runClaudeInTemporaryWorkspace clones (when needed), generates a diff (when
+// applicable), composes the final prompt, and runs claude. It is a lower-level
+// execution helper shared by the stateless path and the issue workflow's
+// background execution step.
+func (svc *service) runClaudeInTemporaryWorkspace(ctx context.Context, req RunRequest) (*Result, error) {
 	id := ulid.Make().String()
 
 	workDir, err := svc.prepareWorkDir(ctx, req, id)
