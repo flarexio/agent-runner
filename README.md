@@ -145,7 +145,9 @@ The API call returns here with `{id, status: accepted}`. Background:
 10. On success: posts a summary comment. On failure: adds `agent-failed` and
     posts a failure comment. The clone is removed either way.
 
-The runner never auto-closes the issue and never auto-merges anything.
+Claude is instructed to open a pull request for review and not to merge
+it; the runner never auto-merges PRs. The issue closes through the
+standard PR review-and-merge flow rather than from inside the run.
 `prompt` is ignored for issue events; the prompt is built server-side from
 the issue body. Validation/claim failures are returned synchronously to the
 caller; once the claim succeeds, downstream failures are reported on the
@@ -440,8 +442,9 @@ Required: `--repo`, `--issue-number`. Useful flags:
 
 Validation/claim failures cause a non-zero exit before Claude runs. Once
 Claude runs, the result (including a non-zero exit) is posted to the issue
-and the subcommand exits 0. The runner never auto-closes the issue and
-never auto-merges anything.
+and the subcommand exits 0. Claude is told to open a PR for review and not
+to merge it; the runner never auto-merges PRs, and the issue closes through
+the standard PR review-and-merge flow.
 
 ## License
 

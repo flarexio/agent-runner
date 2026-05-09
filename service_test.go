@@ -366,15 +366,15 @@ func prependFakeClaude(t *testing.T, exitCode int) {
 func prependFakeClaudeRecording(t *testing.T, exitCode int) string {
 	t.Helper()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("fake claude arg recording is POSIX-only; CI runs on Linux")
+	}
+
 	bin := t.TempDir()
 	name := "claude"
 	argsPath := filepath.Join(bin, "claude.args")
 	exitCodeString := strconv.Itoa(exitCode)
 	content := "#!/bin/sh\nprintf '%s\n' \"$@\" > " + strconv.Quote(argsPath) + "\necho fake output\nexit " + exitCodeString + "\n"
-	if runtime.GOOS == "windows" {
-		name = "claude.bat"
-		content = "@echo off\r\necho fake output\r\nexit /b " + exitCodeString + "\r\n"
-	}
 
 	path := filepath.Join(bin, name)
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {

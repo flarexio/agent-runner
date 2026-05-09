@@ -358,6 +358,7 @@ func TestBuildIssuePromptIncludesContext(t *testing.T) {
 		"#42",
 		"Add feature X",
 		"Please implement feature X",
+		"open a pull request",
 		"Do not merge any pull requests",
 		"Run the relevant tests",
 	} {
