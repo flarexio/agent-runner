@@ -369,9 +369,8 @@ func TestRunIssueReportsFailure(t *testing.T) {
 func TestRunIssuePreservesWorkspaceOnFailureByDefault(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	// Issue config left zero-valued so PreserveOnFailure is nil; the
-	// runtime default should preserve the failed workspace.
-	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
+	// Config loaded from YAML defaults PreserveOnFailure to true when omitted.
+	svc := &service{cfg: Config{WorkDir: workspaces, Issue: EventConfig{PreserveOnFailure: true}}, log: zap.NewNop(), github: gh}
 
 	prependFakeClaude(t, 1)
 
@@ -407,11 +406,10 @@ func TestRunIssuePreservesWorkspaceOnFailureByDefault(t *testing.T) {
 func TestRunIssueRemovesWorkspaceOnFailureWhenDisabled(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	disabled := false
 	svc := &service{
 		cfg: Config{
 			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: &disabled},
+			Issue:   EventConfig{PreserveOnFailure: false},
 		},
 		log:    zap.NewNop(),
 		github: gh,
@@ -447,11 +445,10 @@ func TestRunIssueRemovesWorkspaceOnFailureWhenDisabled(t *testing.T) {
 func TestRunIssuePreservesWorkspaceOnFailureWhenExplicitlyEnabled(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	enabled := true
 	svc := &service{
 		cfg: Config{
 			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: &enabled},
+			Issue:   EventConfig{PreserveOnFailure: true},
 		},
 		log:    zap.NewNop(),
 		github: gh,
@@ -486,9 +483,9 @@ func TestRunIssuePreservesWorkspaceOnFailureWhenExplicitlyEnabled(t *testing.T) 
 func TestRunIssueRemovesWorkspaceOnSuccessByDefault(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	// Default config (PreserveOnFailure nil → preserve on failure).
-	// Successful runs must still clean up.
-	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
+	// A config decoded from YAML defaults PreserveOnFailure to true, but
+	// successful runs must still clean up.
+	svc := &service{cfg: Config{WorkDir: workspaces, Issue: EventConfig{PreserveOnFailure: true}}, log: zap.NewNop(), github: gh}
 
 	prependFakeClaude(t, 0)
 
@@ -509,20 +506,6 @@ func TestRunIssueRemovesWorkspaceOnSuccessByDefault(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("expected successful run to clean up workspace, got %d entries: %v",
 			len(entries), entries)
-	}
-}
-
-func TestPreserveOnFailureOrDefault(t *testing.T) {
-	if got := (EventConfig{}).PreserveOnFailureOrDefault(); got != true {
-		t.Fatalf("PreserveOnFailureOrDefault() with nil = %v, want true", got)
-	}
-	yes := true
-	if got := (EventConfig{PreserveOnFailure: &yes}).PreserveOnFailureOrDefault(); got != true {
-		t.Fatalf("PreserveOnFailureOrDefault() with *true = %v, want true", got)
-	}
-	no := false
-	if got := (EventConfig{PreserveOnFailure: &no}).PreserveOnFailureOrDefault(); got != false {
-		t.Fatalf("PreserveOnFailureOrDefault() with *false = %v, want false", got)
 	}
 }
 

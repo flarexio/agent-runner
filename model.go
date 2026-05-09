@@ -1,6 +1,10 @@
 package runner
 
-import "errors"
+import (
+	"errors"
+
+	"gopkg.in/yaml.v3"
+)
 
 const (
 	EventIssue = "issue"
@@ -65,6 +69,19 @@ type Config struct {
 	GitHub       GitHubConfig `yaml:"github,omitempty"`
 }
 
+// UnmarshalYAML applies config-level defaults while preserving every decoded
+// top-level attribute. In particular, issue.preserveOnFailure defaults to true
+// even when the entire issue block is omitted.
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
+	type rawConfig Config
+	raw := rawConfig{Issue: EventConfig{PreserveOnFailure: true}}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*c = Config(raw)
+	return nil
+}
+
 // EventConfig overrides the top-level Claude flags for a specific event.
 // Empty fields fall back to the top-level Config values.
 //
@@ -76,27 +93,29 @@ type Config struct {
 // PreserveOnFailure (issue mode only) keeps the cloned workspace under
 // WorkDir when claude exits non-zero, so an operator can inspect the run
 // before re-triggering. Successful runs still clean up. CI / PR review
-// runs ignore this flag and always clean up. The pointer type lets us
-// distinguish an omitted setting (nil → defaults to true; the failed
-// workspace is the best debugging artifact) from an explicit
-// preserveOnFailure: false opt-out.
+// runs ignore this flag and always clean up. YAML decoding defaults the
+// field to true, while an explicit preserveOnFailure: false opts out.
 type EventConfig struct {
 	AllowedTools      []string          `yaml:"allowedTools,omitempty"`
 	MaxTurns          int               `yaml:"maxTurns,omitempty"`
 	Model             string            `yaml:"model,omitempty"`
 	ModelLabels       map[string]string `yaml:"modelLabels,omitempty"`
 	BypassPermissions bool              `yaml:"bypassPermissions,omitempty"`
-	PreserveOnFailure *bool             `yaml:"preserveOnFailure,omitempty"`
+	PreserveOnFailure bool              `yaml:"preserveOnFailure,omitempty"`
 }
 
-// PreserveOnFailureOrDefault resolves PreserveOnFailure to a concrete bool,
-// applying the runtime default of true for issue mode when the field is
-// omitted.
-func (c EventConfig) PreserveOnFailureOrDefault() bool {
-	if c.PreserveOnFailure == nil {
-		return true
+// UnmarshalYAML applies the issue-mode default of preserveOnFailure: true
+// while preserving every other EventConfig field decoded from YAML. The
+// project uses gopkg.in/yaml.v3, whose custom unmarshaler receives a
+// *yaml.Node rather than the v2-style unmarshal callback.
+func (c *EventConfig) UnmarshalYAML(value *yaml.Node) error {
+	type rawEventConfig EventConfig
+	raw := rawEventConfig{PreserveOnFailure: true}
+	if err := value.Decode(&raw); err != nil {
+		return err
 	}
-	return *c.PreserveOnFailure
+	*c = EventConfig(raw)
+	return nil
 }
 
 type GitHubConfig struct {
