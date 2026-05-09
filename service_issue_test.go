@@ -125,6 +125,79 @@ func TestValidateIssueRejectsExcludedLabels(t *testing.T) {
 	}
 }
 
+func TestValidateIssueRejectsMultipleModelLabels(t *testing.T) {
+	issue := validIssue()
+	issue.Labels = append(issue.Labels, Label{Name: LabelModelFast}, Label{Name: LabelModelStrong})
+
+	err := validateIssue(issue)
+	if !errors.Is(err, ErrIssueMultipleModelLabels) {
+		t.Fatalf("err = %v, want ErrIssueMultipleModelLabels", err)
+	}
+	if !strings.Contains(err.Error(), LabelModelFast) || !strings.Contains(err.Error(), LabelModelStrong) {
+		t.Fatalf("err = %v, want both model labels mentioned", err)
+	}
+}
+
+func TestSelectIssueModelUsesModelLabelMapping(t *testing.T) {
+	svc := &service{cfg: Config{
+		Model: "claude-sonnet-4-6",
+		Issue: EventConfig{
+			Model: "claude-opus-4-7",
+			ModelLabels: map[string]string{
+				LabelModelFast:   "claude-haiku-4-5",
+				LabelModelStrong: "claude-opus-4-7",
+			},
+		},
+	}}
+
+	if got, want := svc.selectIssueModel(LabelModelFast), "claude-haiku-4-5"; got != want {
+		t.Fatalf("selectIssueModel(fast) = %q, want %q", got, want)
+	}
+	if got, want := svc.selectIssueModel(LabelModelBalanced), "claude-opus-4-7"; got != want {
+		t.Fatalf("selectIssueModel(unmapped balanced) = %q, want issue default %q", got, want)
+	}
+}
+
+func TestRunIssuePassesModelSelectedFromLabel(t *testing.T) {
+	issue := validIssue()
+	issue.Labels = append(issue.Labels, Label{Name: LabelModelFast})
+	gh := &fakeGitHub{issue: issue}
+	workspaces := t.TempDir()
+	svc := &service{
+		cfg: Config{
+			WorkDir: workspaces,
+			Issue: EventConfig{
+				Model: "claude-sonnet-4-6",
+				ModelLabels: map[string]string{
+					LabelModelFast: "claude-haiku-4-5",
+				},
+			},
+		},
+		log:    zap.NewNop(),
+		github: gh,
+	}
+	argsPath := prependFakeClaudeRecording(t, 0)
+
+	if _, err := svc.RunIssue(context.Background(), RunIssueRequest{
+		Repo:        newRemoteRepo(t),
+		IssueNumber: 42,
+	}); err != nil {
+		t.Fatalf("RunIssue() error = %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	args := readClaudeArgs(t, argsPath)
+	if !sliceContainsPair(args, "--model", "claude-haiku-4-5") {
+		t.Fatalf("claude args = %v, want selected model", args)
+	}
+	claim := gh.comments[0]
+	if !strings.Contains(claim, LabelModelFast) || !strings.Contains(claim, "claude-haiku-4-5") {
+		t.Fatalf("claim comment = %q, want model selection details", claim)
+	}
+}
+
 func TestRunIssueRequiresGitHubClient(t *testing.T) {
 	svc := &service{cfg: Config{}, log: zap.NewNop()}
 	_, err := svc.RunIssue(context.Background(), RunIssueRequest{
@@ -293,5 +366,3 @@ func TestBuildIssuePromptIncludesContext(t *testing.T) {
 		}
 	}
 }
-
-

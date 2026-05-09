@@ -15,6 +15,10 @@ const (
 	LabelAgentBlocked      = "agent-blocked"
 	LabelSecuritySensitive = "security-sensitive"
 	LabelAgentFailed       = "agent-failed"
+
+	LabelModelFast     = "model:fast"
+	LabelModelBalanced = "model:balanced"
+	LabelModelStrong   = "model:strong"
 )
 
 var (
@@ -30,19 +34,26 @@ var (
 		LabelAgentBlocked,
 		LabelSecuritySensitive,
 	}
+
+	KnownModelLabels = []string{
+		LabelModelFast,
+		LabelModelBalanced,
+		LabelModelStrong,
+	}
 )
 
 var (
-	ErrTaskNotFound       = errors.New("task not found")
-	ErrInvalidPrompt      = errors.New("invalid prompt")
-	ErrExecFailed         = errors.New("claude execution failed")
-	ErrInvalidRepo        = errors.New("invalid repo")
-	ErrInvalidIssueNumber = errors.New("invalid issue number")
-	ErrIssueNotOpen       = errors.New("issue is not open")
-	ErrIssueMarkerMissing = errors.New("issue body missing agent task marker")
-	ErrIssueLabelMissing  = errors.New("issue missing required label")
-	ErrIssueLabelExcluded = errors.New("issue has excluded label")
-	ErrGitHubUnavailable  = errors.New("github client not configured")
+	ErrTaskNotFound             = errors.New("task not found")
+	ErrInvalidPrompt            = errors.New("invalid prompt")
+	ErrExecFailed               = errors.New("claude execution failed")
+	ErrInvalidRepo              = errors.New("invalid repo")
+	ErrInvalidIssueNumber       = errors.New("invalid issue number")
+	ErrIssueNotOpen             = errors.New("issue is not open")
+	ErrIssueMarkerMissing       = errors.New("issue body missing agent task marker")
+	ErrIssueLabelMissing        = errors.New("issue missing required label")
+	ErrIssueLabelExcluded       = errors.New("issue has excluded label")
+	ErrIssueMultipleModelLabels = errors.New("issue has multiple model recommendation labels")
+	ErrGitHubUnavailable        = errors.New("github client not configured")
 )
 
 type Config struct {
@@ -62,10 +73,11 @@ type Config struct {
 // (issue mode behind label + author gates) where no human is watching tool
 // calls.
 type EventConfig struct {
-	AllowedTools      []string `yaml:"allowedTools,omitempty"`
-	MaxTurns          int      `yaml:"maxTurns,omitempty"`
-	Model             string   `yaml:"model,omitempty"`
-	BypassPermissions bool     `yaml:"bypassPermissions,omitempty"`
+	AllowedTools      []string          `yaml:"allowedTools,omitempty"`
+	MaxTurns          int               `yaml:"maxTurns,omitempty"`
+	Model             string            `yaml:"model,omitempty"`
+	ModelLabels       map[string]string `yaml:"modelLabels,omitempty"`
+	BypassPermissions bool              `yaml:"bypassPermissions,omitempty"`
 }
 
 type GitHubConfig struct {

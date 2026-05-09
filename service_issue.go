@@ -38,7 +38,9 @@ func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result,
 	if err := validateIssue(issue); err != nil {
 		return nil, err
 	}
-	if err := svc.claimIssue(ctx, slug, req.IssueNumber); err != nil {
+	modelLabel := selectModelLabel(issue)
+	selectedModel := svc.selectIssueModel(modelLabel)
+	if err := svc.claimIssue(ctx, slug, req.IssueNumber, modelLabel, selectedModel); err != nil {
 		return nil, fmt.Errorf("claim issue: %w", err)
 	}
 
@@ -52,6 +54,7 @@ func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result,
 		Repo:   req.Repo,
 		Ref:    req.Ref,
 		Event:  EventIssue,
+		Model:  selectedModel,
 	}
 
 	svc.launchBg(func(bgCtx context.Context) {
@@ -59,6 +62,8 @@ func (svc *service) RunIssue(ctx context.Context, req RunIssueRequest) (*Result,
 			zap.String("repo", slug),
 			zap.Int("issue_number", req.IssueNumber),
 			zap.String("id", runID),
+			zap.String("model_label", modelLabel),
+			zap.String("model", selectedModel),
 		)
 
 		result, runErr := svc.execute(bgCtx, exec)
@@ -99,17 +104,55 @@ func validateIssue(issue *Issue) error {
 			return fmt.Errorf("%w: %s", ErrIssueLabelExcluded, label)
 		}
 	}
+	var modelLabels []string
+	for _, label := range KnownModelLabels {
+		if issue.HasLabel(label) {
+			modelLabels = append(modelLabels, label)
+		}
+	}
+	if len(modelLabels) > 1 {
+		return fmt.Errorf("%w: %s", ErrIssueMultipleModelLabels, strings.Join(modelLabels, ", "))
+	}
 	return nil
 }
 
-func (svc *service) claimIssue(ctx context.Context, repo string, number int) error {
+func selectModelLabel(issue *Issue) string {
+	for _, label := range KnownModelLabels {
+		if issue.HasLabel(label) {
+			return label
+		}
+	}
+	return ""
+}
+
+func (svc *service) selectIssueModel(modelLabel string) string {
+	if modelLabel != "" && svc.cfg.Issue.ModelLabels != nil {
+		if model := svc.cfg.Issue.ModelLabels[modelLabel]; model != "" {
+			return model
+		}
+	}
+	cfg := svc.eventConfig(EventIssue)
+	return cfg.Model
+}
+
+func (svc *service) claimIssue(ctx context.Context, repo string, number int, modelLabel string, model string) error {
 	if err := svc.github.RemoveLabel(ctx, repo, number, LabelAgentReady); err != nil {
 		return fmt.Errorf("remove %s: %w", LabelAgentReady, err)
 	}
 	if err := svc.github.AddLabels(ctx, repo, number, []string{LabelClaimedByClaude}); err != nil {
 		return fmt.Errorf("add %s: %w", LabelClaimedByClaude, err)
 	}
-	if err := svc.github.CreateComment(ctx, repo, number, "claude-runner has claimed this issue and started working on it."); err != nil {
+	body := "claude-runner has claimed this issue and started working on it."
+	if modelLabel != "" || model != "" {
+		body += "\n\nModel selection:"
+		if modelLabel != "" {
+			body += fmt.Sprintf("\n- Label: `%s`", modelLabel)
+		}
+		if model != "" {
+			body += fmt.Sprintf("\n- Model: `%s`", model)
+		}
+	}
+	if err := svc.github.CreateComment(ctx, repo, number, body); err != nil {
 		return fmt.Errorf("comment claim: %w", err)
 	}
 	return nil

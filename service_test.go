@@ -95,6 +95,21 @@ func TestBuildArgsTopLevelModel(t *testing.T) {
 	}
 }
 
+func TestBuildArgsRunRequestModelOverridesConfig(t *testing.T) {
+	svc := &service{cfg: Config{
+		Model: "claude-sonnet-4-6",
+		Issue: EventConfig{
+			Model: "claude-opus-4-7",
+		},
+	}}
+
+	args := svc.buildArgs(RunRequest{Prompt: "p", Event: EventIssue, Model: "claude-haiku-4-5"})
+
+	if !sliceContainsPair(args, "--model", "claude-haiku-4-5") {
+		t.Fatalf("args = %v, want RunRequest model override", args)
+	}
+}
+
 func TestBuildArgsIssueModelOverride(t *testing.T) {
 	svc := &service{cfg: Config{
 		AllowedTools: []string{"Read"},
@@ -141,6 +156,15 @@ func sliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func sliceContainsPair(args []string, flag string, value string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPreparePromptWritesDiffContext(t *testing.T) {
@@ -337,6 +361,36 @@ func prependFakeClaude(t *testing.T, exitCode int) {
 		t.Fatalf("write fake claude: %v", err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func prependFakeClaudeRecording(t *testing.T, exitCode int) string {
+	t.Helper()
+
+	bin := t.TempDir()
+	name := "claude"
+	argsPath := filepath.Join(bin, "claude.args")
+	exitCodeString := strconv.Itoa(exitCode)
+	content := "#!/bin/sh\nprintf '%s\n' \"$@\" > " + strconv.Quote(argsPath) + "\necho fake output\nexit " + exitCodeString + "\n"
+	if runtime.GOOS == "windows" {
+		name = "claude.bat"
+		content = "@echo off\r\necho fake output\r\nexit /b " + exitCodeString + "\r\n"
+	}
+
+	path := filepath.Join(bin, name)
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return argsPath
+}
+
+func readClaudeArgs(t *testing.T, argsPath string) []string {
+	t.Helper()
+	b, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read fake claude args: %v", err)
+	}
+	return strings.Fields(strings.TrimSpace(string(b)))
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

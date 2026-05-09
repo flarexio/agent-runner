@@ -19,6 +19,7 @@ type RunRequest struct {
 	BaseRef  string `json:"base_ref,omitempty"`
 	Event    string `json:"event,omitempty"`
 	PRNumber int    `json:"pr_number,omitempty"`
+	Model    string `json:"-"`
 }
 
 type RunIssueRequest struct {
