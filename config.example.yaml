@@ -24,6 +24,13 @@ issue:
   bypassPermissions: false
   maxTurns: 30
   # model: claude-opus-4-7
+  # modelLabels maps optional issue labels to Claude model ids or aliases.
+  # If an issue has no model label, or its label is not mapped here, issue.model
+  # falls back to the top-level model.
+  # modelLabels:
+  #   model:fast: claude-haiku-4-5
+  #   model:balanced: claude-sonnet-4-6
+  #   model:strong: claude-opus-4-7
   # allowedTools:
   # - Read
   # - Glob

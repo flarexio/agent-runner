@@ -51,6 +51,10 @@ issue:
   bypassPermissions: true
   maxTurns: 30
   # model: claude-opus-4-7
+  # modelLabels:
+  #   model:fast: claude-haiku-4-5
+  #   model:balanced: claude-sonnet-4-6
+  #   model:strong: claude-opus-4-7
 ```
 
 `workDir` is optional. Defaults to `~/.flarex/claude-runner/workspaces`.
@@ -60,11 +64,19 @@ It is a server-side setting and cannot be overridden by client requests.
 Accepts a model id (`claude-sonnet-4-6`, `claude-opus-4-7`, …) or an alias
 (`sonnet`, `opus`, `haiku`). Omit to let `claude` use its default.
 
-`issue.allowedTools`, `issue.maxTurns`, `issue.model`, and
-`issue.bypassPermissions` only apply when `event: issue`. Empty fields
+`issue.allowedTools`, `issue.maxTurns`, `issue.model`, `issue.modelLabels`,
+and `issue.bypassPermissions` only apply when `event: issue`. Empty fields
 fall back to the top-level values, so you can set `model` once at the
 top and override it for issue runs only when you need a different model
 (e.g. a stronger model for implementation tasks vs. review).
+
+`issue.modelLabels` optionally maps one of `model:fast`, `model:balanced`,
+or `model:strong` on the issue to a concrete Claude model id or alias. When
+exactly one model label is present and mapped, it overrides `issue.model` for
+that run. Unlabelled issues, or labelled issues without a configured mapping,
+fall back to `issue.model` and then the top-level `model`. Issues with more
+than one model label are rejected before claim so the selection stays
+deterministic.
 
 `issue.bypassPermissions: true` (shown above) passes
 `--dangerously-skip-permissions` to `claude` and ignores `allowedTools`,
@@ -119,16 +131,19 @@ Synchronous (returns to the caller as soon as it finishes):
    `agent-ready`, and `agent-approved`
 4. Rejects the issue if it is labelled `claimed-by-claude`, `agent-blocked`,
    or `security-sensitive`
-5. Removes `agent-ready`, adds `claimed-by-claude`, and posts a claim comment
+5. Rejects the issue if more than one model recommendation label is present
+   (`model:fast`, `model:balanced`, `model:strong`)
+6. Selects the Claude model from the issue model label mapping, if configured
+7. Removes `agent-ready`, adds `claimed-by-claude`, and posts a claim comment
 
 The API call returns here with `{id, status: accepted}`. Background:
 
-6. Clones the repo into `workDir/<run-id>`
-7. Builds the prompt from the issue body and runs `claude -p` (Claude is
-   instructed to implement the task, not merge PRs, and report the tests it
-   ran)
-8. On success: posts a summary comment. On failure: adds `agent-failed` and
-   posts a failure comment. The clone is removed either way.
+8. Clones the repo into `workDir/<run-id>`
+9. Builds the prompt from the issue body and runs `claude -p` with the
+   selected model, when one was selected (Claude is instructed to implement
+   the task, not merge PRs, and report the tests it ran)
+10. On success: posts a summary comment. On failure: adds `agent-failed` and
+    posts a failure comment. The clone is removed either way.
 
 The runner never auto-closes the issue and never auto-merges anything.
 `prompt` is ignored for issue events; the prompt is built server-side from

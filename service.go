@@ -147,8 +147,12 @@ func (svc *service) buildArgs(req RunRequest) []string {
 	if cfg.MaxTurns > 0 {
 		args = append(args, "--max-turns", fmt.Sprintf("%d", cfg.MaxTurns))
 	}
-	if cfg.Model != "" {
-		args = append(args, "--model", cfg.Model)
+	model := cfg.Model
+	if req.Model != "" {
+		model = req.Model
+	}
+	if model != "" {
+		args = append(args, "--model", model)
 	}
 
 	return args
