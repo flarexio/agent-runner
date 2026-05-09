@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -359,6 +360,164 @@ func TestRunIssueReportsFailure(t *testing.T) {
 	failure := gh.comments[len(gh.comments)-1]
 	if !strings.Contains(failure, "failed") {
 		t.Fatalf("last comment = %q, want failure summary", failure)
+	}
+	if !strings.Contains(failure, "Run ID:") {
+		t.Fatalf("failure comment = %q, want Run ID context", failure)
+	}
+}
+
+func TestRunIssueRemovesWorkspaceOnFailureByDefault(t *testing.T) {
+	gh := &fakeGitHub{issue: validIssue()}
+	workspaces := t.TempDir()
+	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
+
+	prependFakeClaude(t, 1)
+
+	if _, err := svc.RunIssue(context.Background(), RunIssueRequest{
+		Repo:        newRemoteRepo(t),
+		IssueNumber: 42,
+	}); err != nil {
+		t.Fatalf("RunIssue() error = %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(workspaces)
+	if err != nil {
+		t.Fatalf("read workspaces: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected workspace to be cleaned up by default, got %d entries: %v",
+			len(entries), entries)
+	}
+
+	failure := gh.comments[len(gh.comments)-1]
+	if strings.Contains(failure, "Workspace preserved") {
+		t.Fatalf("failure comment unexpectedly mentions preservation: %q", failure)
+	}
+}
+
+func TestRunIssuePreservesWorkspaceOnFailureWhenConfigured(t *testing.T) {
+	gh := &fakeGitHub{issue: validIssue()}
+	workspaces := t.TempDir()
+	svc := &service{
+		cfg: Config{
+			WorkDir: workspaces,
+			Issue:   EventConfig{PreserveOnFailure: true},
+		},
+		log:    zap.NewNop(),
+		github: gh,
+	}
+
+	prependFakeClaude(t, 1)
+
+	if _, err := svc.RunIssue(context.Background(), RunIssueRequest{
+		Repo:        newRemoteRepo(t),
+		IssueNumber: 42,
+	}); err != nil {
+		t.Fatalf("RunIssue() error = %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(workspaces)
+	if err != nil {
+		t.Fatalf("read workspaces: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected preserved workspace, found none")
+	}
+
+	failure := gh.comments[len(gh.comments)-1]
+	if !strings.Contains(failure, "Workspace preserved") {
+		t.Fatalf("failure comment = %q, want preservation hint", failure)
+	}
+	for _, entry := range entries {
+		if strings.Contains(failure, entry.Name()) {
+			t.Fatalf("failure comment %q exposes workspace dir name %q", failure, entry.Name())
+		}
+	}
+}
+
+func TestRunIssueRemovesWorkspaceOnSuccessWithPreserveConfigured(t *testing.T) {
+	gh := &fakeGitHub{issue: validIssue()}
+	workspaces := t.TempDir()
+	svc := &service{
+		cfg: Config{
+			WorkDir: workspaces,
+			Issue:   EventConfig{PreserveOnFailure: true},
+		},
+		log:    zap.NewNop(),
+		github: gh,
+	}
+
+	prependFakeClaude(t, 0)
+
+	if _, err := svc.RunIssue(context.Background(), RunIssueRequest{
+		Repo:        newRemoteRepo(t),
+		IssueNumber: 42,
+	}); err != nil {
+		t.Fatalf("RunIssue() error = %v", err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(workspaces)
+	if err != nil {
+		t.Fatalf("read workspaces: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected successful run to clean up workspace, got %d entries: %v",
+			len(entries), entries)
+	}
+}
+
+func TestBuildIssueFailureCommentSanitizesPaths(t *testing.T) {
+	report := issueFailureReport{
+		runID: "01ABC",
+		detail: "panic at /var/runner/workspaces/01ABC/main.go:10\n" +
+			"hint: rerun with --workdir=/var/runner/workspaces",
+		ws: workspaceOutcome{
+			dir:       "/var/runner/workspaces/01ABC",
+			preserved: true,
+		},
+	}
+
+	body := buildIssueFailureComment(report, "/var/runner/workspaces")
+
+	if strings.Contains(body, "/var/runner/workspaces/01ABC") {
+		t.Fatalf("body still contains workspace path:\n%s", body)
+	}
+	if strings.Contains(body, "/var/runner/workspaces") {
+		t.Fatalf("body still contains workspace root:\n%s", body)
+	}
+	for _, want := range []string{
+		"failed to complete",
+		"Run ID: `01ABC`",
+		"Workspace preserved",
+		"<workspace>",
+		"<workspace-root>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestBuildIssueFailureCommentOmitsPreservationWhenNotPreserved(t *testing.T) {
+	body := buildIssueFailureComment(issueFailureReport{
+		runID:  "01ABC",
+		detail: "boom",
+	}, "")
+
+	if strings.Contains(body, "Workspace preserved") {
+		t.Fatalf("body unexpectedly mentions preservation:\n%s", body)
+	}
+	if !strings.Contains(body, "Run ID: `01ABC`") {
+		t.Fatalf("body missing run id:\n%s", body)
 	}
 }
 

@@ -72,12 +72,18 @@ type Config struct {
 // claude and ignores AllowedTools. Use only for trusted unattended flows
 // (issue mode behind label + author gates) where no human is watching tool
 // calls.
+//
+// PreserveOnFailure (issue mode only) keeps the cloned workspace under
+// WorkDir when claude exits non-zero, so an operator can inspect the run
+// before re-triggering. Successful runs still clean up. CI / PR review
+// runs ignore this flag and always clean up.
 type EventConfig struct {
 	AllowedTools      []string          `yaml:"allowedTools,omitempty"`
 	MaxTurns          int               `yaml:"maxTurns,omitempty"`
 	Model             string            `yaml:"model,omitempty"`
 	ModelLabels       map[string]string `yaml:"modelLabels,omitempty"`
 	BypassPermissions bool              `yaml:"bypassPermissions,omitempty"`
+	PreserveOnFailure bool              `yaml:"preserveOnFailure,omitempty"`
 }
 
 type GitHubConfig struct {
