@@ -1,28 +1,8 @@
 # claude-runner
 
-A Go service that runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude -p`) remotely over NATS and HTTP transports.
+A Go service that runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude -p`) remotely over NATS and HTTP. Use it for plain prompts, pull request reviews, and GitHub issue tasks where Claude implements the work and opens a PR.
 
-## Architecture
-
-```
-Service → Middleware (logging) → Endpoint → Transport (NATS / HTTP)
-```
-
-## Features
-
-- Execute Claude CLI prompts remotely via NATS or HTTP
-- Auto-clone git repositories as working directories
-- Configurable allowed tools and max turns
-- NATS transport for edge nodes without public IPs
-- HTTP transport with Gin framework
-- Event-aware routing: plain prompts, pull request reviews, and GitHub issue tasks
-
-## Prerequisites
-
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- Go 1.25+
-
-## Installation
+## Install
 
 ```bash
 # Server
@@ -32,176 +12,38 @@ go install github.com/flarexio/claude-runner/cmd/claude-runner@latest
 go install github.com/flarexio/claude-runner/cmd/claude-runner-client@latest
 ```
 
-## Configuration
+Prerequisites: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated, Go 1.25+.
 
-Create config directory at `~/.flarex/claude-runner/` with the following files:
+## Configure
 
-### config.yaml
+Drop a `config.yaml` under `~/.flarex/claude-runner/`. Start from [`config.example.yaml`](./config.example.yaml) — every knob is commented inline.
 
-```yaml
-# workDir: ~/.flarex/claude-runner/workspaces
-allowedTools:
-- Read
-- Glob
-- Grep
-- Bash
-maxTurns: 10
-# model: claude-sonnet-4-6
-issue:
-  bypassPermissions: true
-  maxTurns: 30
-  # model: claude-opus-4-7
-  # modelLabels:
-  #   model:fast: claude-haiku-4-5
-  #   model:balanced: claude-sonnet-4-6
-  #   model:strong: claude-opus-4-7
-```
+For NATS transport, also drop two files in the same directory:
 
-`workDir` is optional. Defaults to `~/.flarex/claude-runner/workspaces`.
-It is a server-side setting and cannot be overridden by client requests.
+- `id` — plain text edge node ID
+- `user.creds` — NATS credentials
 
-`model` is optional. When set, it is passed to `claude` as `--model`.
-Accepts a model id (`claude-sonnet-4-6`, `claude-opus-4-7`, …) or an alias
-(`sonnet`, `opus`, `haiku`). Omit to let `claude` use its default.
+The most security-relevant flag is `issue.bypassPermissions`: setting it to `true` passes `--dangerously-skip-permissions` to `claude`. Only enable that when the trigger is gated to trusted members (the `agent-ready` label gate in the [Issue Mode action](#issue-mode-action) is the canonical example) and the runner's GitHub token is restricted to non-destructive operations.
 
-`issue.allowedTools`, `issue.maxTurns`, `issue.model`, `issue.modelLabels`,
-and `issue.bypassPermissions` only apply when `event: issue`. Empty fields
-fall back to the top-level values, so you can set `model` once at the
-top and override it for issue runs only when you need a different model
-(e.g. a stronger model for implementation tasks vs. review).
+For service architecture, lifecycle, and the issue agent-task protocol, see [AGENTS.md](./AGENTS.md).
 
-`issue.modelLabels` optionally maps one of `model:fast`, `model:balanced`,
-or `model:strong` on the issue to a concrete Claude model id or alias. When
-exactly one model label is present and mapped, it overrides `issue.model` for
-that run. Unlabelled issues, or labelled issues without a configured mapping,
-fall back to `issue.model` and then the top-level `model`. Issues with more
-than one model label are rejected before claim so the selection stays
-deterministic.
-
-`issue.bypassPermissions: true` (shown above) passes
-`--dangerously-skip-permissions` to `claude` and ignores `allowedTools`,
-mirroring how Claude Code is normally used in interactive development. In
-issue mode no human is on the call path, so only enable bypass when the
-trigger is gated to trusted members (the `agent-ready` label gate in the
-[Issue Mode action example](#issue-mode), since only users with write access
-can apply labels) and the runner's GitHub token is restricted to
-non-destructive operations.
-
-If you prefer a curated tool list, set `bypassPermissions: false` and
-spell out `issue.allowedTools` (Issue mode needs `Edit` and `Write` to
-implement tasks, which the top-level fallback list does not include).
-
-`issue.preserveOnFailure` controls whether the cloned workspace under
-`workDir` is kept when the claude run exits non-zero, so an operator can
-inspect the failed run and re-trigger after fixing the issue. It defaults
-to `true` because the failed workspace is usually the best debugging
-artifact for an async issue run; set `issue.preserveOnFailure: false` to
-opt out and clean up failed issue workspaces too. Successful issue runs
-still clean up, and CI / PR review cleanup behavior is unchanged. The
-failure comment posted on the issue mentions the preserved workspace
-alongside the run id, but never the host path.
-
-A preserved workspace also keeps runner-owned metadata under
-`<task-root>/.claude-runner/` — `state.json` (latest snapshot),
-`attempts/<run-id>.json` (per-attempt history; previous attempts persist
-across re-runs of the same issue), and `lock.json` (released when the run
-ends). The `<run-id>` matches the run id in the failure comment, so logs,
-comment, and on-disk record correlate. Metadata files keep raw error
-detail for operator debugging; only the public failure comment is
-sanitized.
-
-## Execution Modes
-
-claude-runner exposes two operations on its Service: `Run` (prompt / PR
-review, synchronous) and `RunIssue` (GitHub issue task, async after claim).
-Each is a 1:1 endpoint — no event dispatch happens at the endpoint or
-transport layer; the client picks which endpoint to call.
-
-| Mode | Endpoint | NATS subject | Behavior |
-| --- | --- | --- | --- |
-| Existing workspace / CI / PR review | `POST /api/run` | `<topic>.run` | Synchronous |
-| GitHub issue | `POST /api/run-issue` | `<topic>.run-issue` | Sync claim → goroutine for execute → returns `accepted` |
-
-### Existing Workspace Mode
-
-When `repo` is omitted, claude-runner runs `claude -p` directly in the
-configured `workDir`. Use this when the runner is tied to an existing local
-checkout on the server.
-
-### CI Mode
-
-When `repo` is provided, claude-runner treats the request as a CI job. It
-clones the requested repository into `workDir/<run-id>`, optionally checks
-out `ref`, generates pull request diff context when `base-ref` is provided,
-runs `claude -p`, then removes the temporary clone.
-
-### Issue Mode
-
-For issue tasks the daemon splits the work into a synchronous claim phase
-and an asynchronous execution phase, so callers (NATS clients, GitHub
-Actions, AI agents) get an `accepted` response in seconds instead of
-holding the request open for the full Claude run.
-
-Synchronous (returns to the caller as soon as it finishes):
-
-1. Fetches the issue and verifies it is **open**
-2. Verifies the body contains `<!-- agent-task:v1 -->`
-3. Verifies the labels include `type:agent-task`, `agent:claude-code`,
-   `agent-ready`, and `agent-approved`
-4. Rejects the issue if it is labelled `claimed-by-claude`, `agent-blocked`,
-   or `security-sensitive`
-5. Rejects the issue if more than one model recommendation label is present
-   (`model:fast`, `model:balanced`, `model:strong`)
-6. Selects the Claude model from the issue model label mapping, if configured
-7. Removes `agent-ready`, adds `claimed-by-claude`, and posts a claim comment
-
-The API call returns here with `{id, status: accepted}`. Background:
-
-8. Clones the repo into `workDir/gh-issue-<owner>-<repo>-<number>/repo/`
-   and writes runner-owned metadata to the sibling `.claude-runner/`
-   (state, per-attempt history, lock)
-9. Builds the prompt from the issue body and runs `claude -p` with the
-   selected model, when one was selected (Claude is instructed to implement
-   the task, not merge PRs, and report the tests it ran)
-10. On success: posts a summary comment and removes the whole task root. On
-    failure: adds `agent-failed` and posts a failure comment containing the
-    run id; the task root (clone + metadata) is kept under `workDir` for
-    inspection by default, and is removed only when
-    `issue.preserveOnFailure: false` is set explicitly.
-
-Claude is instructed to open a pull request for review and not to merge
-it; the runner never auto-merges PRs. The issue closes through the
-standard PR review-and-merge flow rather than from inside the run.
-`prompt` is ignored for issue events; the prompt is built server-side from
-the issue body. Validation/claim failures are returned synchronously to the
-caller; once the claim succeeds, downstream failures are reported on the
-issue itself, not in the API response.
-
-The same flow is also exposed as a one-shot subcommand for AI agents — see
-[claude-runner run-issue](#claude-runner-run-issue) below.
-
-### id
-
-A plain text file containing the edge node ID.
-
-### user.creds
-
-NATS credentials file for authentication.
-
-## Docker
-
-### NATS
+## Run
 
 ```bash
+claude-runner            # NATS only
+claude-runner --http     # also enable HTTP on :8080
+```
+
+### Docker
+
+```bash
+# NATS
 docker run -d \
   -v ~/.claude:/root/.claude \
   -v ~/.flarex/claude-runner:/root/.flarex/claude-runner \
   flarexio/claude-runner
-```
 
-### HTTP
-
-```bash
+# HTTP
 docker run -d \
   -v ~/.claude:/root/.claude \
   -v ~/.flarex/claude-runner:/root/.flarex/claude-runner \
@@ -209,186 +51,16 @@ docker run -d \
   flarexio/claude-runner --http
 ```
 
-## Usage
+## Call it
 
-### Server
+Two operations, two endpoints. Clients pick one; the server does no event-based dispatching.
 
-```bash
-# Start with NATS transport (default)
-claude-runner
-
-# Enable HTTP transport
-claude-runner --http
-```
-
-### Client
-
-#### HTTP
-
-```bash
-claude-runner-client \
-  --transport http \
-  --endpoint http://localhost:8080 \
-  --prompt "Review this code for bugs"
-```
-
-#### NATS
-
-```bash
-claude-runner-client \
-  --edge-id <edge-node-id> \
-  --prompt "Review this code for bugs"
-```
-
-#### With git repository
-
-```bash
-claude-runner-client \
-  --transport http \
-  --endpoint http://localhost:8080 \
-  --prompt "Review this code" \
-  --repo git@github.com:user/repo.git
-```
-
-#### Issue task
-
-```bash
-claude-runner-client \
-  --transport http \
-  --endpoint http://localhost:8080 \
-  --event issue \
-  --repo https://github.com/user/repo.git \
-  --issue-number 42
-```
-
-`--prompt` is ignored when `--event=issue`; the runner builds the prompt from
-the issue body. The server must be configured with a GitHub token (see
-[config.yaml](#configyaml)).
-
-#### Persisting output to a file
-
-```bash
-claude-runner-client \
-  --edge-id <edge-node-id> \
-  --prompt "Review this code" \
-  --output-file claude-output.md
-```
-
-`--output-file` writes Claude's output to disk in addition to stdout. Relative
-paths are resolved under `$GITHUB_WORKSPACE` when set (otherwise the current
-directory), and parent directories are created automatically. The file is
-written even if the remote returns an error, and the client still exits
-non-zero in that case.
-
-## GitHub Action
-
-Use as a step in your workflow to send prompts to a running claude-runner
-instance. Add `NATS_CREDS` (content of `user.creds`) to your repository's
-**Settings → Secrets → Actions** for any of the examples below.
-
-### CI Mode (Pull Request and non-PR)
-
-The same step works for `pull_request`, `push`, and `workflow_dispatch`. On a
-PR, `base-ref` and `pr-number` are populated and claude-runner generates a PR
-diff for Claude to review against. On non-PR triggers those fields are empty
-and the prompt runs against the cloned `ref` without diff context. Add an
-`if: github.event_name == 'pull_request'` gate if you want to limit the step
-to PRs only.
-
-```yaml
-on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Code Review with Claude
-        uses: flarexio/claude-runner@v1
-        with:
-          prompt: |
-            Review all changed files in this repository.
-            Before reviewing, search for all REVIEW.md files. If found, apply the root
-            REVIEW.md as global review guidelines and each subdirectory's REVIEW.md as
-            additional guidelines scoped to that directory.
-            Provide a concise summary of findings. If the code looks good, say so briefly.
-          repo: ${{ github.server_url }}/${{ github.repository }}.git
-          ref: ${{ github.head_ref || github.ref_name }}
-          base-ref: ${{ github.base_ref }}
-          event: ${{ github.event_name }}
-          pr-number: ${{ github.event.pull_request.number || '' }}
-          nats-creds-content: ${{ secrets.NATS_CREDS }}
-          edge-id: ${{ secrets.EDGE_ID }}
-          output-file: claude-output.md
-
-      - name: Add Claude review to summary
-        if: always()
-        run: |
-          if [ -f claude-output.md ]; then
-            echo "# Claude Review" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            cat claude-output.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-```
-
-### Issue Mode
-
-Triggered on `issues` events (typically `labeled`). `prompt` is omitted —
-claude-runner builds the prompt from the issue body. The runner only acts on
-issues that pass validation (open, marker present, required labels including
-`agent-ready` and `agent-approved`, no excluded labels). The server must have
-a GitHub token configured (see [config.yaml](#configyaml)). Results are
-posted back as a comment on the issue; `output-file` lets you also attach the
-output to the workflow run summary.
-
-The job `if:` below gates on the `agent-ready` label so the workflow only
-fires when a maintainer adds that label. Only repository members with write
-access can apply labels, so this restricts who can trigger an agent run.
-
-```yaml
-on:
-  issues:
-    types: [labeled]
-
-jobs:
-  agent:
-    if: github.event.label.name == 'agent-ready'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run Claude on issue
-        uses: flarexio/claude-runner@v1
-        with:
-          event: issue
-          repo: ${{ github.server_url }}/${{ github.repository }}.git
-          issue-number: ${{ github.event.issue.number }}
-          nats-creds-content: ${{ secrets.NATS_CREDS }}
-          edge-id: ${{ secrets.EDGE_ID }}
-          output-file: claude-output.md
-
-      - name: Add Claude output to summary
-        run: |
-          if [ -f claude-output.md ]; then
-            echo "# Claude Issue Run" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            cat claude-output.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-```
-
-`output-file` is optional. When set, the client writes Claude's output to that
-path in addition to stdout. Relative paths are resolved under
-`$GITHUB_WORKSPACE`, and parent directories are created automatically.
-
-## API
-
-Two operations, two endpoints. Clients choose based on what they want to
-do; the server does no event-based dispatching.
+| Operation | HTTP | NATS subject | Behavior |
+| --- | --- | --- | --- |
+| `Run` | `POST /api/run` | `<topic>.run` | Synchronous prompt / PR review |
+| `RunIssue` | `POST /api/run-issue` | `<topic>.run-issue` | Sync claim → background execute → returns `accepted` |
 
 ### POST /api/run
-
-Synchronous prompt / PR review. Request:
 
 ```json
 {
@@ -401,20 +73,9 @@ Synchronous prompt / PR review. Request:
 }
 ```
 
-Response:
-
-```json
-{
-  "id": "01JNXYZ...",
-  "output": "Claude's full review",
-  "error": ""
-}
-```
+Response is `{id, output, error}`. When `repo` is set the runner clones it into `workDir/<run-id>` and removes the clone after the run; when `repo` is empty the runner runs in `workDir` directly.
 
 ### POST /api/run-issue
-
-GitHub issue task. Validates and claims synchronously, then runs Claude in
-the background. Request:
 
 ```json
 {
@@ -423,52 +84,94 @@ the background. Request:
 }
 ```
 
-Response (returns after the claim phase, before Claude runs):
+Validates and claims synchronously, then runs Claude in the background. The HTTP response returns after the claim phase with `output: "...accepted; claude-runner is processing in the background."`. Final success/failure is posted as a comment on the GitHub issue. The server must have a GitHub token configured.
 
-```json
-{
-  "id": "01JNXYZ...",
-  "output": "Issue owner/repo#42 accepted; claude-runner is processing in the background.",
-  "error": ""
-}
-```
-
-The two endpoints have distinct request types — `run` does not accept
-`issue_number`, and `run-issue` does not accept `prompt`/`base_ref`/
-`pr_number`. Final issue success/failure is posted as a comment on the
-GitHub issue, not in the response.
-
-NATS callers use the same endpoint names as subjects:
-`<topic>.run` and `<topic>.run-issue`.
-
-## claude-runner run-issue
-
-`claude-runner run-issue` is a one-shot subcommand that performs the full
-GitHub issue agent-task protocol — claim, run Claude, post results — in a
-single foreground invocation. It builds the same Service the daemon uses,
-calls `Service.RunIssue`, then drains the background goroutine via
-`Service.Close` before exiting. Designed to be invocable directly by AI
-agents as a skill.
+### CLI client
 
 ```bash
-claude-runner run-issue \
-  --repo owner/repo \
+# Plain prompt
+claude-runner-client \
+  --transport http --endpoint http://localhost:8080 \
+  --prompt "Review this code"
+
+# Issue task
+claude-runner-client \
+  --transport http --endpoint http://localhost:8080 \
+  --event issue \
+  --repo https://github.com/user/repo.git \
   --issue-number 42
 ```
 
-Required: `--repo`, `--issue-number`. Useful flags:
+`--prompt` is ignored when `--event=issue`; the runner builds the prompt from the issue body. `--output-file` writes Claude's output to disk in addition to stdout.
 
-- `--path` — config directory (defaults to `~/.flarex/claude-runner`); the
-  GitHub token, allowed-tools, max-turns, and bypass-permissions for issue
-  events are all read from `config.yaml`.
-- `--ref` — branch to check out.
-- `--github-token` — overrides the config token (env: `GITHUB_TOKEN`).
+## GitHub Action
 
-Validation/claim failures cause a non-zero exit before Claude runs. Once
-Claude runs, the result (including a non-zero exit) is posted to the issue
-and the subcommand exits 0. Claude is told to open a PR for review and not
-to merge it; the runner never auto-merges PRs, and the issue closes through
-the standard PR review-and-merge flow.
+Add `NATS_CREDS` (content of `user.creds`) and `EDGE_ID` to your repository's **Settings → Secrets → Actions**.
+
+### CI / PR review
+
+The same step works for `pull_request`, `push`, and `workflow_dispatch`. On a PR, `base-ref` and `pr-number` are populated and claude-runner generates a PR diff for Claude to review against.
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: flarexio/claude-runner@v1
+        with:
+          prompt: |
+            Review all changed files in this repository.
+            Provide a concise summary of findings.
+          repo: ${{ github.server_url }}/${{ github.repository }}.git
+          ref: ${{ github.head_ref || github.ref_name }}
+          base-ref: ${{ github.base_ref }}
+          event: ${{ github.event_name }}
+          pr-number: ${{ github.event.pull_request.number || '' }}
+          nats-creds-content: ${{ secrets.NATS_CREDS }}
+          edge-id: ${{ secrets.EDGE_ID }}
+          output-file: claude-output.md
+```
+
+### Issue mode <a id="issue-mode-action"></a>
+
+The `if:` gate restricts who can trigger an agent run — only repository members with write access can apply labels.
+
+```yaml
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  agent:
+    if: github.event.label.name == 'agent-ready'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: flarexio/claude-runner@v1
+        with:
+          event: issue
+          repo: ${{ github.server_url }}/${{ github.repository }}.git
+          issue-number: ${{ github.event.issue.number }}
+          nats-creds-content: ${{ secrets.NATS_CREDS }}
+          edge-id: ${{ secrets.EDGE_ID }}
+```
+
+The runner only acts on issues that pass validation: open, body contains `<!-- agent-task:v1 -->`, required labels (`type:agent-task`, `agent:claude-code`, `agent-ready`, `agent-approved`), no excluded labels (`claimed-by-claude`, `agent-blocked`, `security-sensitive`). Failed issue runs preserve the workspace under `workDir` for inspection — see [AGENTS.md](./AGENTS.md) for the on-disk layout.
+
+## One-shot CLI: `claude-runner run-issue`
+
+Runs the full GitHub issue agent-task protocol — claim, run Claude, post results — in a single foreground invocation. Designed to be invocable directly by AI agents as a skill.
+
+```bash
+claude-runner run-issue --repo owner/repo --issue-number 42
+```
+
+Useful flags: `--path` (config directory), `--ref` (branch), `--github-token` (overrides config token; env: `GITHUB_TOKEN`).
 
 ## License
 
