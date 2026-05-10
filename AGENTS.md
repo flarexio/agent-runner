@@ -42,14 +42,16 @@ Request types are distinct (`RunRequest` vs `RunIssueRequest`); clients pick the
 
 ### Run vs RunIssue: sync-claim, async-execute
 
-`Run` is fully synchronous. `RunIssue` (`service_issue.go`) is the only place that splits a request into a sync phase and a background phase:
+`Run` is fully synchronous and delegates to `runStateless` (a thin wrapper over the shared workspace helper — see Workspace lifecycle below). `RunIssue` (`service_issue.go`) delegates to `runIssueWorkflow`, which is the only place that splits a request into a sync phase and a background phase:
 
 1. **Sync (returned to caller):** fetch issue, `validateIssue` (open + `IssueMarker` + `RequiredIssueLabels` + no `ExcludedIssueLabels` + at most one of `KnownModelLabels`), pick model via `selectModelLabel` + `selectIssueModel`, run `claimIssue` (remove `agent-ready`, add `claimed-by-claude`, post claim comment).
-2. **Async (`svc.launchBg`):** clone, run `claude`, post success/failure comment back to the issue. The goroutine runs on a fresh `context.Background()` so it survives request cancellation. `service.bgWg` tracks it; `Service.Close()` blocks on the WaitGroup.
+2. **Async (`svc.launchBg`):** call `runIssueExecution` (which invokes the shared workspace helper with `preserveOnFailure` from issue config), then post a success or failure comment back to the issue. The goroutine runs on a fresh `context.Background()` so it survives request cancellation. `service.bgWg` tracks it; `Service.Close()` blocks on the WaitGroup.
+
+Failure comments are built by `buildIssueFailureComment` from an `issueFailureReport{runID, detail, ws}` and run through `sanitizeFailureDetail`, which strips workspace paths and the runner's home dir before posting. The comment includes the run ID for log correlation and a "workspace preserved on the runner" hint when `ws.preserved` is set, but **never** posts the host path. Extend that struct rather than calling `CreateComment` directly when adding new failure context.
 
 `run-issue` (the CLI subcommand in `cmd/claude-runner/main.go`) reuses the same `Service` and explicitly calls `svc.Close()` after `RunIssue` returns so the foreground process waits for the background goroutine before exiting. The HTTP/NATS daemons call `svc.Close()` from `defer` for graceful shutdown.
 
-Issue mode prompts are **always built server-side** by `buildIssuePrompt` from the issue body — `RunRequest.Prompt` is overwritten before reaching `execute`. Don't try to surface the client's `prompt` for issue events.
+Issue mode prompts are **always built server-side** by `buildIssuePrompt` from the issue body — `RunRequest.Prompt` is overwritten before reaching the workspace helper. Don't try to surface the client's `prompt` for issue events.
 
 ### Event-aware config resolution
 
@@ -57,7 +59,16 @@ Issue mode prompts are **always built server-side** by `buildIssuePrompt` from t
 
 ### Workspace lifecycle
 
-`prepareWorkDir` clones into `cfg.WorkDir/<ulid>` when `req.Repo` is set; `execute` `defer`s `os.RemoveAll` only on the cloned path, never on the configured `WorkDir`. When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer pointing Claude at it; issue events skip this trailer (the prompt is already authoritative).
+Both `Run` and `RunIssue` execute Claude through the shared helper `runClaudeInTemporaryWorkspace(ctx, req, opts)` (`service.go`). `prepareWorkDir` clones into `cfg.WorkDir/<ulid>` when `req.Repo` is set, and the helper's deferred cleanup runs `os.RemoveAll` only on the cloned path — never on the configured `WorkDir`. When `req.Repo` is empty (existing-workspace mode), the helper does not own the directory and never removes it.
+
+Cleanup is gated by `runOptions.preserveOnFailure`:
+
+- **Stateless / CI / PR review** (`runStateless`) passes the zero-value `runOptions{}` — the cloned workspace is always removed, success or failure.
+- **Issue execution** (`runIssueExecution`) passes `runOptions{preserveOnFailure: cfg.Issue.PreserveOnFailure}`. When that is true and `claude` exits non-zero, the helper sets `ws.preserved = true` and skips the `RemoveAll`, leaving the workspace under `cfg.WorkDir/<run-id>` for an operator to inspect. Successful issue runs still clean up.
+
+`Issue.PreserveOnFailure` defaults to `true` via custom `UnmarshalYAML` on both `Config` and `EventConfig` (`model.go`) — set `issue.preserveOnFailure: false` in `config.yaml` to opt out. Don't change the default in struct literals; tests construct configs directly and rely on the zero value, while YAML-loaded daemons rely on the unmarshaler.
+
+When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer pointing Claude at it; issue events skip this trailer (the prompt is already authoritative).
 
 ### Issue protocol constants
 
