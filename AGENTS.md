@@ -69,7 +69,9 @@ Cleanup operates on `taskRoot`, not `workDir`. When `preserveOnFailure` is true 
 
 `Issue.PreserveOnFailure` defaults to `true` via custom `UnmarshalYAML` on both `Config` and `EventConfig` (`model.go`) — set `issue.preserveOnFailure: false` in `config.yaml` to opt out. Don't change the default in struct literals; tests construct configs directly and rely on the zero value, while YAML-loaded daemons rely on the unmarshaler.
 
-`git clone` is invoked with `-c core.longpaths=true` so deep `.git/objects/...` paths work on Windows even when the test name + workspace prefix push paths past `MAX_PATH` (260 chars). When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer; issue events skip this trailer (the prompt is already authoritative).
+When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer; issue events skip this trailer (the prompt is already authoritative).
+
+Tests use a `shortTempDir` helper (in `service_test.go`) instead of `t.TempDir()` for cloned repos, because `t.TempDir()` embeds the Go test name in the path — combined with the new `<gh-issue-...>/repo/.git/objects/...` layout, long test names can push paths past Windows `MAX_PATH` (260 chars). The runner itself never produces paths that long; the helper is purely test-infra.
 
 ### Issue protocol constants
 

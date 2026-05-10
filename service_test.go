@@ -325,10 +325,10 @@ func TestPrepareWorkDirRemovesFailedClone(t *testing.T) {
 func newRemoteRepo(t *testing.T) string {
 	t.Helper()
 
-	remote := t.TempDir()
+	remote := shortTempDir(t)
 	runGit(t, "", "init", "--bare", remote)
 
-	src := t.TempDir()
+	src := shortTempDir(t)
 	runGit(t, "", "clone", remote, src)
 	runGit(t, src, "config", "user.email", "test@example.com")
 	runGit(t, src, "config", "user.name", "Test User")
@@ -342,6 +342,22 @@ func newRemoteRepo(t *testing.T) string {
 	runGit(t, src, "push", "origin", "main")
 
 	return remote
+}
+
+// shortTempDir is t.TempDir without the long test-name prefix. Issue-mode
+// tests duplicate the workspace path inside their stable task ID
+// (gh-issue-<owner>-<repo>-<n>) plus a /repo/ subdir, so cloning into a
+// t.TempDir() workspace can push deep .git/objects/... paths past Windows
+// MAX_PATH (260). The runner itself never produces paths that long; this
+// is purely a test-infra workaround.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cr")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 func prependFakeClaude(t *testing.T, exitCode int) {

@@ -306,8 +306,7 @@ func (svc *service) prepareWorkDir(ctx context.Context, req RunRequest, workDir 
 		}
 	}
 
-	// core.longpaths lets git create paths > MAX_PATH on Windows; harmless elsewhere.
-	args := []string{"-c", "core.longpaths=true", "clone"}
+	args := []string{"clone"}
 	if req.BaseRef == "" {
 		args = append(args, "--depth", "1")
 	}
