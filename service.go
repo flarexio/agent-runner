@@ -224,6 +224,7 @@ func (svc *service) preparePrompt(req RunRequest, workDir string, diff string) (
 	if diffPath != "" {
 		b.WriteString("- Diff file: claude-runner.diff\n")
 		b.WriteString("\nUse claude-runner.diff as the authoritative review scope. Review only changes shown in that diff unless the prompt explicitly asks otherwise.\n")
+		b.WriteString("When citing line numbers, use the Read tool on the file at HEAD to look them up; do not infer line numbers from diff hunk offsets.\n")
 	}
 
 	return b.String(), nil
