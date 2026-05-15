@@ -329,56 +329,10 @@ func TestRunIssueReportsFailure(t *testing.T) {
 	}
 }
 
-func TestRunIssueRemovesWorkspaceOnFailureWhenDisabled(t *testing.T) {
+func TestRunIssuePreservesWorkspaceOnFailure(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	svc := &service{
-		cfg: Config{
-			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: false},
-		},
-		log:    zap.NewNop(),
-		github: gh,
-	}
-
-	prependFakeClaude(t, 1)
-
-	if _, err := svc.RunIssue(context.Background(), RunIssueRequest{
-		Repo:        newRemoteRepo(t),
-		IssueNumber: 42,
-	}); err != nil {
-		t.Fatalf("RunIssue() error = %v", err)
-	}
-	if err := svc.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	entries, err := os.ReadDir(workspaces)
-	if err != nil {
-		t.Fatalf("read workspaces: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("expected workspace to be cleaned up when preserveOnFailure=false, got %d entries: %v",
-			len(entries), entries)
-	}
-
-	failure := gh.comments[len(gh.comments)-1]
-	if strings.Contains(failure, "Workspace preserved") {
-		t.Fatalf("failure comment unexpectedly mentions preservation: %q", failure)
-	}
-}
-
-func TestRunIssuePreservesWorkspaceOnFailureWhenExplicitlyEnabled(t *testing.T) {
-	gh := &fakeGitHub{issue: validIssue()}
-	workspaces := t.TempDir()
-	svc := &service{
-		cfg: Config{
-			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: true},
-		},
-		log:    zap.NewNop(),
-		github: gh,
-	}
+	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
 
 	prependFakeClaude(t, 1)
 
@@ -488,8 +442,7 @@ func TestIssueTaskIDFormat(t *testing.T) {
 func TestRunIssueWritesStableLayout(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	// Force preservation so we can inspect the layout after a failed claude run.
-	svc := &service{cfg: Config{WorkDir: workspaces, Issue: EventConfig{PreserveOnFailure: true}}, log: zap.NewNop(), github: gh}
+	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
 
 	prependFakeClaude(t, 1)
 
@@ -533,10 +486,7 @@ func TestRunIssueWritesAttemptAndState(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
 	svc := &service{
-		cfg: Config{
-			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: true},
-		},
+		cfg:    Config{WorkDir: workspaces},
 		log:    zap.NewNop(),
 		github: gh,
 	}
@@ -618,10 +568,7 @@ func TestRunIssueLockBlocksConcurrentAttempt(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
 	svc := &service{
-		cfg: Config{
-			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: true},
-		},
+		cfg:    Config{WorkDir: workspaces},
 		log:    zap.NewNop(),
 		github: gh,
 	}
@@ -675,10 +622,7 @@ func TestRunIssueLockTakesOverStaleLock(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
 	svc := &service{
-		cfg: Config{
-			WorkDir: workspaces,
-			Issue:   EventConfig{PreserveOnFailure: true},
-		},
+		cfg:    Config{WorkDir: workspaces},
 		log:    zap.NewNop(),
 		github: gh,
 	}
@@ -721,7 +665,7 @@ func TestRunIssueLockTakesOverStaleLock(t *testing.T) {
 func TestRunIssueTaskIDIsStableAcrossRetries(t *testing.T) {
 	gh := &fakeGitHub{issue: validIssue()}
 	workspaces := t.TempDir()
-	svc := &service{cfg: Config{WorkDir: workspaces, Issue: EventConfig{PreserveOnFailure: true}}, log: zap.NewNop(), github: gh}
+	svc := &service{cfg: Config{WorkDir: workspaces}, log: zap.NewNop(), github: gh}
 	prependFakeClaude(t, 1)
 
 	repo := newRemoteRepo(t)

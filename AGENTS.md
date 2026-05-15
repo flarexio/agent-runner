@@ -46,7 +46,7 @@ Request types are distinct (`RunRequest`, `RunIssueRequest`, `CleanupIssueReques
 `Run` is fully synchronous and delegates to `runStateless` (a thin wrapper over the shared workspace helper — see Workspace lifecycle below). `RunIssue` (`service_issue.go`) delegates to `runIssueWorkflow`, which is the only place that splits a request into a sync phase and a background phase:
 
 1. **Sync (returned to caller):** fetch issue, `validateIssue` (open + `IssueMarker` + `RequiredIssueLabels` + no `ExcludedIssueLabels` + at most one of `KnownModelLabels`), pick model via `selectModelLabel` + `selectIssueModel`, run `claimIssue` (remove `agent-ready`, add `claimed-by-claude`, post claim comment).
-2. **Async (`svc.launchBg`):** call `runIssueExecution` (which invokes the shared workspace helper with `preserveOnFailure` from issue config), then post a success or failure comment back to the issue. The goroutine runs on a fresh `context.Background()` so it survives request cancellation. `service.bgWg` tracks it; `Service.Close()` blocks on the WaitGroup.
+2. **Async (`svc.launchBg`):** call `runIssueExecution`, then post a success or failure comment back to the issue. The goroutine runs on a fresh `context.Background()` so it survives request cancellation. `service.bgWg` tracks it; `Service.Close()` blocks on the WaitGroup.
 
 Failure comments are built by `buildIssueFailureComment` from an `issueFailureReport{runID, detail, ws}` and run through `sanitizeFailureDetail`, which strips workspace paths and the runner's home dir before posting. The comment includes the run ID for log correlation and a "workspace preserved on the runner" hint when `ws.preserved` is set, but **never** posts the host path. Extend that struct rather than calling `CreateComment` directly when adding new failure context.
 
@@ -67,15 +67,13 @@ The two modes have different lifecycles, owned by separate functions in `service
 
 When adding issue-specific behavior (state files, resume, PR finalizer), put it in `runIssueExecution` (or a deeper helper it calls). Do **not** thread it through `execClaude` — the architecture goal is to keep the CI / PR review path from accumulating issue-mode complexity (per #4).
 
-When `claude` exits non-zero in issue mode and `cfg.Issue.PreserveOnFailure` is true, `ws.preserved` is set and the deferred `RemoveAll` is skipped, leaving the whole task root for an operator to inspect. `prepareWorkDir` runs `RemoveAll(workDir)` before cloning so a leftover `repo/` from a previous preserved-on-failure run does not block re-cloning (resume itself is out of scope; this just unblocks a manual re-trigger).
+Issue mode preserves the whole task root after both successful and failed runs. `CleanupIssue` removes it when the issue is closed. `prepareWorkDir` runs `RemoveAll(workDir)` before cloning so a leftover `repo/` from a previous preserved issue run does not block re-cloning (resume itself is out of scope; this just unblocks a manual re-trigger).
 
 ### Issue task metadata and lock
 
 `service_issue_state.go` owns the `<taskRoot>/.claude-runner/` files: `state.json` (latest snapshot), `attempts/<attempt-id>.json` (per-attempt history; previous attempts are preserved across runs of the same task), and `lock.json`. State and attempt records are written at the start of `runIssueExecution` with `status: "running"` and updated to a terminal status (`completed` / `failed`) in the deferred finalizer before cleanup. Writes go through `writeJSONAtomic` (tmp + rename) so a crash mid-write cannot leave a corrupt canonical file. Records keep raw error detail (full host paths included) — they are local-only; only the GitHub failure comment is sanitized. Add new metadata fields here, not in the workflow.
 
 `acquireWorkspaceLock` writes `lock.json` with `O_EXCL`. If a fresh lock already exists it returns `ErrIssueWorkspaceBusy`; if the existing lock's `started_at` is older than `staleLockTTL` (1h) or the file is unreadable, it logs a warning and takes over. The label-based claim (`agent-ready` → `claimed-by-claude`) is the primary concurrency boundary; this lock is local-disk defense-in-depth and intentionally avoids cross-platform pid-liveness checks.
-
-`Issue.PreserveOnFailure` defaults to `true` via custom `UnmarshalYAML` on both `Config` and `EventConfig` (`model.go`) — set `issue.preserveOnFailure: false` in `config.yaml` to opt out. Don't change the default in struct literals; tests construct configs directly and rely on the zero value, while YAML-loaded daemons rely on the unmarshaler.
 
 When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer; issue events skip this trailer (the prompt is already authoritative).
 

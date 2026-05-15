@@ -229,9 +229,7 @@ func (svc *service) runIssueExecution(ctx context.Context, req RunRequest, attem
 		if result != nil {
 			rec.ErrorDetail = result.Error
 		}
-		if svc.cfg.Issue.PreserveOnFailure {
-			ws.preserved = true
-		}
+		ws.preserved = true
 		return result, ws, nil
 	}
 	rec.Status = statusCompleted

@@ -16,9 +16,6 @@ issue:
   # allowedTools. Only safe behind the label gates in the README.
   bypassPermissions: false
   maxTurns: 30
-  # preserveOnFailure: keep the cloned workspace when claude exits non-zero
-  # for operator inspection. Defaults to true.
-  preserveOnFailure: true
   # model: claude-opus-4-7
   # modelLabels:
   #   model:fast: claude-haiku-4-5
