@@ -18,6 +18,7 @@ type Service interface {
 	Close() error
 	Run(ctx context.Context, req RunRequest) (*Result, error)
 	RunIssue(ctx context.Context, req RunIssueRequest) (*Result, error)
+	CleanupIssue(ctx context.Context, req CleanupIssueRequest) (*Result, error)
 }
 
 type ServiceMiddleware func(Service) Service
@@ -258,9 +259,9 @@ func (svc *service) prepareWorkDir(ctx context.Context, req RunRequest, workDir 
 		return nil
 	}
 
-	// A leftover repo/ from a previous preserved-on-failure issue run would
-	// make git clone refuse the destination; stateless runs use unique ULIDs
-	// so this is a no-op for them.
+	// A leftover repo/ from a previous preserved issue run would make git clone
+	// refuse the destination; stateless runs use unique ULIDs so this is a no-op
+	// for them.
 	if err := os.RemoveAll(workDir); err != nil {
 		return fmt.Errorf("clear stale workspace: %w", err)
 	}

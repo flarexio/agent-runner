@@ -1,13 +1,10 @@
 package runner
 
-import (
-	"errors"
-
-	"gopkg.in/yaml.v3"
-)
+import "errors"
 
 const (
-	EventIssue = "issue"
+	EventIssue       = "issue"
+	EventIssueClosed = "issue-closed"
 
 	IssueMarker = "<!-- agent-task:v1 -->"
 
@@ -70,43 +67,17 @@ type Config struct {
 	GitHub       GitHubConfig `yaml:"github,omitempty"`
 }
 
-// UnmarshalYAML defaults issue.preserveOnFailure to true even when the issue
-// block is omitted entirely.
-func (c *Config) UnmarshalYAML(value *yaml.Node) error {
-	type rawConfig Config
-	raw := rawConfig{Issue: EventConfig{PreserveOnFailure: true}}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = Config(raw)
-	return nil
-}
-
 // EventConfig overrides top-level Claude flags for an event. Empty fields fall
 // back to the top-level Config values.
 //
 // BypassPermissions passes --dangerously-skip-permissions and ignores
 // AllowedTools — only for trusted unattended flows.
-//
-// PreserveOnFailure (issue mode) keeps the cloned workspace when claude exits
-// non-zero. Defaults to true via UnmarshalYAML.
 type EventConfig struct {
 	AllowedTools      []string          `yaml:"allowedTools,omitempty"`
 	MaxTurns          int               `yaml:"maxTurns,omitempty"`
 	Model             string            `yaml:"model,omitempty"`
 	ModelLabels       map[string]string `yaml:"modelLabels,omitempty"`
 	BypassPermissions bool              `yaml:"bypassPermissions,omitempty"`
-	PreserveOnFailure bool              `yaml:"preserveOnFailure,omitempty"`
-}
-
-func (c *EventConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawEventConfig EventConfig
-	raw := rawEventConfig{PreserveOnFailure: true}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = EventConfig(raw)
-	return nil
 }
 
 type GitHubConfig struct {

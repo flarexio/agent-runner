@@ -6,19 +6,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestConfigUnmarshalYAMLDefaultsIssuePreserveOnFailureWhenIssueOmitted(t *testing.T) {
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(`workDir: /tmp/runner`), &cfg); err != nil {
-		t.Fatalf("yaml.Unmarshal() error = %v", err)
-	}
-	if !cfg.Issue.PreserveOnFailure {
-		t.Fatal("omitted issue block left PreserveOnFailure false, want default true")
-	}
-	if cfg.WorkDir != "/tmp/runner" {
-		t.Fatalf("WorkDir = %q", cfg.WorkDir)
-	}
-}
-
 func TestConfigUnmarshalYAMLPreservesTopLevelFields(t *testing.T) {
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(`
@@ -49,39 +36,6 @@ github:
 	if cfg.GitHub.Token != "token-from-file" || cfg.GitHub.BaseURL != "https://example.test/api" {
 		t.Fatalf("GitHub = %#v", cfg.GitHub)
 	}
-	if !cfg.Issue.PreserveOnFailure {
-		t.Fatal("omitted issue block did not default PreserveOnFailure to true")
-	}
-}
-
-func TestEventConfigUnmarshalYAMLDefaultsPreserveOnFailure(t *testing.T) {
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(`issue: {}`), &cfg); err != nil {
-		t.Fatalf("yaml.Unmarshal() error = %v", err)
-	}
-	if !cfg.Issue.PreserveOnFailure {
-		t.Fatal("omitted issue.preserveOnFailure = false, want default true")
-	}
-}
-
-func TestEventConfigUnmarshalYAMLAllowsExplicitPreserveOnFailureFalse(t *testing.T) {
-	var cfg Config
-	if err := yaml.Unmarshal([]byte("issue:\n  preserveOnFailure: false\n"), &cfg); err != nil {
-		t.Fatalf("yaml.Unmarshal() error = %v", err)
-	}
-	if cfg.Issue.PreserveOnFailure {
-		t.Fatal("explicit issue.preserveOnFailure=false decoded true")
-	}
-}
-
-func TestEventConfigUnmarshalYAMLAllowsExplicitPreserveOnFailureTrue(t *testing.T) {
-	var cfg Config
-	if err := yaml.Unmarshal([]byte("issue:\n  preserveOnFailure: true\n"), &cfg); err != nil {
-		t.Fatalf("yaml.Unmarshal() error = %v", err)
-	}
-	if !cfg.Issue.PreserveOnFailure {
-		t.Fatal("explicit issue.preserveOnFailure=true decoded false")
-	}
 }
 
 func TestEventConfigUnmarshalYAMLPreservesOtherFields(t *testing.T) {
@@ -101,9 +55,6 @@ issue:
 		t.Fatalf("yaml.Unmarshal() error = %v", err)
 	}
 	issue := cfg.Issue
-	if !issue.PreserveOnFailure {
-		t.Fatal("omitted preserveOnFailure did not default to true")
-	}
 	if len(issue.AllowedTools) != 2 || issue.AllowedTools[0] != "Read" || issue.AllowedTools[1] != "Bash" {
 		t.Fatalf("AllowedTools = %#v", issue.AllowedTools)
 	}
