@@ -31,13 +31,13 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: build/claude-runner/Dockerfile
+          file: build/agent-runner/Dockerfile
           push: true
           tags: |
-            flarexio/claude-runner:${{ steps.version.outputs.full }}
-            flarexio/claude-runner:${{ steps.version.outputs.minor }}
-            flarexio/claude-runner:${{ steps.version.outputs.major }}
-            flarexio/claude-runner:latest
+            flarexio/agent-runner:${{ steps.version.outputs.full }}
+            flarexio/agent-runner:${{ steps.version.outputs.minor }}
+            flarexio/agent-runner:${{ steps.version.outputs.major }}
+            flarexio/agent-runner:latest
 
   release-client:
     runs-on: ubuntu-latest
@@ -64,10 +64,10 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: build/claude-runner-client/Dockerfile
+          file: build/agent-runner-client/Dockerfile
           push: true
           tags: |
-            flarexio/claude-runner-client:${{ steps.version.outputs.full }}
-            flarexio/claude-runner-client:${{ steps.version.outputs.minor }}
-            flarexio/claude-runner-client:${{ steps.version.outputs.major }}
-            flarexio/claude-runner-client:latest
+            flarexio/agent-runner-client:${{ steps.version.outputs.full }}
+            flarexio/agent-runner-client:${{ steps.version.outputs.minor }}
+            flarexio/agent-runner-client:${{ steps.version.outputs.major }}
+            flarexio/agent-runner-client:latest

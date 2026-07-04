@@ -3,7 +3,7 @@ package nats
 import (
 	"github.com/nats-io/nats.go/micro"
 
-	runner "github.com/flarexio/claude-runner"
+	runner "github.com/flarexio/agent-runner"
 )
 
 func AddEndpoints(group micro.Group, endpoints runner.EndpointSet) {

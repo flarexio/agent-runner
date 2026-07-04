@@ -6,8 +6,8 @@ This file provides project-wide development standards, build commands, and archi
 
 ```bash
 # Build server and client
-go build cmd/claude-runner/main.go
-go build cmd/claude-runner-client/main.go
+go build cmd/agent-runner/main.go
+go build cmd/agent-runner-client/main.go
 
 # Run all tests (CI runs this on Linux)
 go test -v ./...
@@ -15,19 +15,19 @@ go test -v ./...
 # Run a single test
 go test -run TestBuildArgsUsesIssueOverride -v ./...
 
-# Run the daemon (loads ~/.flarex/claude-runner/config.yaml)
-go run cmd/claude-runner/main.go            # NATS only
-go run cmd/claude-runner/main.go --http     # also enable HTTP on :8080
+# Run the daemon (loads ~/.flarex/agent-runner/config.yaml)
+go run cmd/agent-runner/main.go            # NATS only
+go run cmd/agent-runner/main.go --http     # also enable HTTP on :8080
 
 # One-shot subcommand: full GitHub issue agent-task protocol in foreground
-go run cmd/claude-runner/main.go run-issue --repo owner/repo --issue-number 42
+go run cmd/agent-runner/main.go run-issue --repo owner/repo --issue-number 42
 ```
 
 Tests that need to invoke `claude` shell out to a fake binary that the helpers in `service_test.go` (`prependFakeClaude`, `prependFakeClaudeRecording`) drop on `$PATH`. The recording variant inspects the actual argv that would be passed to `claude` and is **POSIX-only** — it self-skips on Windows. Develop on Linux/macOS to exercise the full suite, or rely on CI.
 
 ## Architecture
 
-The service is a single Go module (`github.com/flarexio/claude-runner`) implementing the layering described in the README: `Service → Middleware (logging) → Endpoint → Transport (NATS / HTTP)`. The pattern follows the project-wide convention: endpoints map 1:1 to `Service` methods, no event dispatch happens at the endpoint or transport layer, async work lives inside the `Service`, and the CLI subcommand goes through `Service` (not a separate code path).
+The service is a single Go module (`github.com/flarexio/agent-runner`) implementing the layering described in the README: `Service → Middleware (logging) → Endpoint → Transport (NATS / HTTP)`. The pattern follows the project-wide convention: endpoints map 1:1 to `Service` methods, no event dispatch happens at the endpoint or transport layer, async work lives inside the `Service`, and the CLI subcommand goes through `Service` (not a separate code path).
 
 ### Operations and endpoints
 
@@ -50,7 +50,7 @@ Request types are distinct (`RunRequest`, `RunIssueRequest`, `CleanupIssueReques
 
 Failure comments are built by `buildIssueFailureComment` from an `issueFailureReport{runID, detail, ws}` and run through `sanitizeFailureDetail`, which strips workspace paths and the runner's home dir before posting. The comment includes the run ID for log correlation and a "workspace preserved on the runner" hint when `ws.preserved` is set, but **never** posts the host path. Extend that struct rather than calling `CreateComment` directly when adding new failure context.
 
-`run-issue` (the CLI subcommand in `cmd/claude-runner/main.go`) reuses the same `Service` and explicitly calls `svc.Close()` after `RunIssue` returns so the foreground process waits for the background goroutine before exiting. The HTTP/NATS daemons call `svc.Close()` from `defer` for graceful shutdown.
+`run-issue` (the CLI subcommand in `cmd/agent-runner/main.go`) reuses the same `Service` and explicitly calls `svc.Close()` after `RunIssue` returns so the foreground process waits for the background goroutine before exiting. The HTTP/NATS daemons call `svc.Close()` from `defer` for graceful shutdown.
 
 Issue mode prompts are **always built server-side** by `buildIssuePrompt` from the issue body — `RunRequest.Prompt` is overwritten before reaching the workspace helper. Don't try to surface the client's `prompt` for issue events.
 
@@ -63,7 +63,7 @@ Issue mode prompts are **always built server-side** by `buildIssuePrompt` from t
 The two modes have different lifecycles, owned by separate functions in `service.go`. They share only the leaf helper `execClaude(ctx, req, workDir, runID)`, which builds the diff (when applicable), composes the prompt, runs `claude` in `workDir`, and returns the result plus a `claudeFailed` bool. `execClaude` does **not** own the workspace — the caller's lifecycle wrapper does.
 
 - **Stateless / CI / PR review** (`runStateless`): per-run ULID, flat — `workDir = <cfg.WorkDir>/<ulid>`. Always cleaned up. When `req.Repo == ""` (existing-workspace mode), `workDir = cfg.WorkDir` and the function never removes it.
-- **Issue execution** (`runIssueExecution`, in `service_issue.go`): stable layout — `taskRoot = <cfg.WorkDir>/<issueTaskID>` where `issueTaskID = gh-issue-<owner>-<repo>-<n>`, `workDir = <taskRoot>/repo`, runner metadata in `<taskRoot>/.claude-runner/` (sibling to `repo/`, outside the Git worktree). Successful issue runs preserve `taskRoot` for operator inspection; `CleanupIssue` removes that task root later when an `issues.closed` event is delivered. The `attemptID` passed in from `runIssueWorkflow` is the same value reported as "Run ID" in the failure comment, so it matches `attempts/<attempt-id>.json` on disk.
+- **Issue execution** (`runIssueExecution`, in `service_issue.go`): stable layout — `taskRoot = <cfg.WorkDir>/<issueTaskID>` where `issueTaskID = gh-issue-<owner>-<repo>-<n>`, `workDir = <taskRoot>/repo`, runner metadata in `<taskRoot>/.agent-runner/` (sibling to `repo/`, outside the Git worktree). Successful issue runs preserve `taskRoot` for operator inspection; `CleanupIssue` removes that task root later when an `issues.closed` event is delivered. The `attemptID` passed in from `runIssueWorkflow` is the same value reported as "Run ID" in the failure comment, so it matches `attempts/<attempt-id>.json` on disk.
 
 When adding issue-specific behavior (state files, resume, PR finalizer), put it in `runIssueExecution` (or a deeper helper it calls). Do **not** thread it through `execClaude` — the architecture goal is to keep the CI / PR review path from accumulating issue-mode complexity (per #4).
 
@@ -71,11 +71,11 @@ Issue mode preserves the whole task root after both successful and failed runs. 
 
 ### Issue task metadata and lock
 
-`service_issue_state.go` owns the `<taskRoot>/.claude-runner/` files: `state.json` (latest snapshot), `attempts/<attempt-id>.json` (per-attempt history; previous attempts are preserved across runs of the same task), and `lock.json`. State and attempt records are written at the start of `runIssueExecution` with `status: "running"` and updated to a terminal status (`completed` / `failed`) in the deferred finalizer before cleanup. Writes go through `writeJSONAtomic` (tmp + rename) so a crash mid-write cannot leave a corrupt canonical file. Records keep raw error detail (full host paths included) — they are local-only; only the GitHub failure comment is sanitized. Add new metadata fields here, not in the workflow.
+`service_issue_state.go` owns the `<taskRoot>/.agent-runner/` files: `state.json` (latest snapshot), `attempts/<attempt-id>.json` (per-attempt history; previous attempts are preserved across runs of the same task), and `lock.json`. State and attempt records are written at the start of `runIssueExecution` with `status: "running"` and updated to a terminal status (`completed` / `failed`) in the deferred finalizer before cleanup. Writes go through `writeJSONAtomic` (tmp + rename) so a crash mid-write cannot leave a corrupt canonical file. Records keep raw error detail (full host paths included) — they are local-only; only the GitHub failure comment is sanitized. Add new metadata fields here, not in the workflow.
 
 `acquireWorkspaceLock` writes `lock.json` with `O_EXCL`. If a fresh lock already exists it returns `ErrIssueWorkspaceBusy`; if the existing lock's `started_at` is older than `staleLockTTL` (1h) or the file is unreadable, it logs a warning and takes over. The label-based claim (`agent-ready` → `claimed-by-claude`) is the primary concurrency boundary; this lock is local-disk defense-in-depth and intentionally avoids cross-platform pid-liveness checks.
 
-When `BaseRef` is provided, `generateDiff` writes `claude-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer; issue events skip this trailer (the prompt is already authoritative).
+When `BaseRef` is provided, `generateDiff` writes `agent-runner.diff` into the workspace and `preparePrompt` appends a "Pull request context" trailer; issue events skip this trailer (the prompt is already authoritative).
 
 Tests use a `shortTempDir` helper (in `service_test.go`) instead of `t.TempDir()` for cloned repos, because `t.TempDir()` embeds the Go test name in the path — combined with the `<gh-issue-...>/repo/.git/objects/...` layout, long test names can push paths past Windows `MAX_PATH` (260 chars). The runner itself never produces paths that long; the helper is purely test-infra.
 
@@ -89,4 +89,4 @@ All label/marker strings live in `model.go` (`IssueMarker`, `Label*`, `RequiredI
 
 ### Transports
 
-Both transports are thin: they decode the body into the right request type and dispatch to the matching endpoint. They do not branch on `event`. The HTTP transport uses Gin and a generic `endpointHandler[T]`; the NATS transport uses `nats.go/micro` with `EndpointHandler[T]` and the topic format `edges.<edge-id>.claude-runner.<run|run-issue>`. The edge-id is read from a plain text file at `<config-path>/id`; if that file is absent the daemon silently runs without NATS.
+Both transports are thin: they decode the body into the right request type and dispatch to the matching endpoint. They do not branch on `event`. The HTTP transport uses Gin and a generic `endpointHandler[T]`; the NATS transport uses `nats.go/micro` with `EndpointHandler[T]` and the topic format `edges.<edge-id>.agent-runner.<run|run-issue>`. The edge-id is read from a plain text file at `<config-path>/id`; if that file is absent the daemon silently runs without NATS.

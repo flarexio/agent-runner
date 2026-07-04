@@ -1,4 +1,4 @@
-# workDir: ~/.flarex/claude-runner/workspaces
+# workDir: ~/.flarex/agent-runner/workspaces
 
 allowedTools:
 - Read

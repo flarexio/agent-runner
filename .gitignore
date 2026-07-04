@@ -1,5 +1,5 @@
-/claude-runner
-/claude-runner.exe
-/claude-runner-client
-/claude-runner-client.exe
+/agent-runner
+/agent-runner.exe
+/agent-runner-client
+/agent-runner-client.exe
 *.stackdump

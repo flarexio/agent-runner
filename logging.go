@@ -8,7 +8,7 @@ import (
 
 func LoggingMiddleware(log *zap.Logger) ServiceMiddleware {
 	log = log.With(
-		zap.String("service", "claude-runner"),
+		zap.String("service", "agent-runner"),
 	)
 
 	return func(next Service) Service {

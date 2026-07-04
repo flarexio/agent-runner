@@ -17,14 +17,14 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	runner "github.com/flarexio/claude-runner"
-	httpT "github.com/flarexio/claude-runner/transport/http"
-	natsT "github.com/flarexio/claude-runner/transport/nats"
+	runner "github.com/flarexio/agent-runner"
+	httpT "github.com/flarexio/agent-runner/transport/http"
+	natsT "github.com/flarexio/agent-runner/transport/nats"
 )
 
 func main() {
 	cmd := &cli.Command{
-		Name:  "claude-runner",
+		Name:  "agent-runner",
 		Usage: "Claude Code Runner over HTTP/NATS",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -98,7 +98,7 @@ func loadConfig(cmd *cli.Command) (runner.Config, string, error) {
 		if err != nil {
 			return runner.Config{}, "", err
 		}
-		path = filepath.Join(homeDir, ".flarex", "claude-runner")
+		path = filepath.Join(homeDir, ".flarex", "agent-runner")
 	}
 
 	f, err := os.Open(filepath.Join(path, "config.yaml"))
@@ -157,7 +157,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		natsCreds := filepath.Join(path, "user.creds")
 
 		nc, err := nats.Connect(natsURL,
-			nats.Name("Claude Runner - "+edgeID),
+			nats.Name("Agent Runner - "+edgeID),
 			nats.UserCredentials(natsCreds),
 		)
 		if err != nil {
@@ -166,7 +166,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		defer nc.Drain()
 
 		srv, err := micro.AddService(nc, micro.Config{
-			Name:    "claude-runner",
+			Name:    "agent-runner",
 			Version: "1.0.0",
 		})
 		if err != nil {
@@ -174,7 +174,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		}
 		defer srv.Stop()
 
-		topic := "edges." + edgeID + ".claude-runner"
+		topic := "edges." + edgeID + ".agent-runner"
 
 		root := srv.AddGroup(topic)
 		natsT.AddEndpoints(root, endpoints)
