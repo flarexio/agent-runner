@@ -1,4 +1,4 @@
-module github.com/flarexio/claude-runner
+module github.com/flarexio/agent-runner
 
 go 1.25.1
 

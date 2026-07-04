@@ -25,7 +25,7 @@ type ServiceMiddleware func(Service) Service
 
 func NewService(cfg Config) (Service, error) {
 	log := zap.L().With(
-		zap.String("service", "claude-runner"),
+		zap.String("service", "agent-runner"),
 	)
 
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
@@ -199,7 +199,7 @@ func (svc *service) preparePrompt(req RunRequest, workDir string, diff string) (
 
 	var diffPath string
 	if diff != "" {
-		diffPath = filepath.Join(workDir, "claude-runner.diff")
+		diffPath = filepath.Join(workDir, "agent-runner.diff")
 		if err := os.WriteFile(diffPath, []byte(diff), 0o600); err != nil {
 			return "", fmt.Errorf("write diff: %w", err)
 		}
@@ -208,7 +208,7 @@ func (svc *service) preparePrompt(req RunRequest, workDir string, diff string) (
 	var b strings.Builder
 	b.WriteString(req.Prompt)
 	b.WriteString("\n\n")
-	b.WriteString("Pull request context supplied by claude-runner:\n")
+	b.WriteString("Pull request context supplied by agent-runner:\n")
 
 	if req.Event != "" {
 		fmt.Fprintf(&b, "- Event: %s\n", req.Event)
@@ -223,8 +223,8 @@ func (svc *service) preparePrompt(req RunRequest, workDir string, diff string) (
 		fmt.Fprintf(&b, "- Head ref: %s\n", req.Ref)
 	}
 	if diffPath != "" {
-		b.WriteString("- Diff file: claude-runner.diff\n")
-		b.WriteString("\nUse claude-runner.diff as the authoritative review scope. Review only changes shown in that diff unless the prompt explicitly asks otherwise.\n")
+		b.WriteString("- Diff file: agent-runner.diff\n")
+		b.WriteString("\nUse agent-runner.diff as the authoritative review scope. Review only changes shown in that diff unless the prompt explicitly asks otherwise.\n")
 		b.WriteString("When citing line numbers, use the Read tool on the file at HEAD to look them up; do not infer line numbers from diff hunk offsets.\n")
 	}
 

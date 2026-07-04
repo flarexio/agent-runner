@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Claude on issue
-        uses: flarexio/claude-runner@v1
+        uses: flarexio/agent-runner@v1
         with:
           event: issue
           repo: ${{ github.server_url }}/${{ github.repository }}.git
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Cleanup Claude issue workspace
-        uses: flarexio/claude-runner@v1
+        uses: flarexio/agent-runner@v1
         with:
           event: issue-closed
           repo: ${{ github.server_url }}/${{ github.repository }}.git

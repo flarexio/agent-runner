@@ -184,7 +184,7 @@ func TestPreparePromptWritesDiffContext(t *testing.T) {
 		t.Fatalf("preparePrompt() error = %v", err)
 	}
 
-	diff, err := os.ReadFile(filepath.Join(workDir, "claude-runner.diff"))
+	diff, err := os.ReadFile(filepath.Join(workDir, "agent-runner.diff"))
 	if err != nil {
 		t.Fatalf("read diff file: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestPreparePromptWritesDiffContext(t *testing.T) {
 		"- PR number: 2",
 		"- Base ref: main",
 		"- Head ref: feature/review",
-		"Use claude-runner.diff as the authoritative review scope.",
+		"Use agent-runner.diff as the authoritative review scope.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt does not contain %q:\n%s", want, prompt)

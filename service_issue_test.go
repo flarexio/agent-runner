@@ -433,8 +433,8 @@ func TestBuildIssueFailureCommentOmitsPreservationWhenNotPreserved(t *testing.T)
 }
 
 func TestIssueTaskIDFormat(t *testing.T) {
-	got := issueTaskID("flarexio/claude-runner", 8)
-	if want := "gh-issue-flarexio-claude-runner-8"; got != want {
+	got := issueTaskID("flarexio/agent-runner", 8)
+	if want := "gh-issue-flarexio-agent-runner-8"; got != want {
 		t.Fatalf("issueTaskID() = %q, want %q", got, want)
 	}
 }
@@ -472,13 +472,13 @@ func TestRunIssueWritesStableLayout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil {
 		t.Fatalf(".git/ missing under repo/: %v", err)
 	}
-	// .claude-runner/ must not live inside the git worktree.
-	if _, err := os.Stat(filepath.Join(repoDir, ".claude-runner")); !os.IsNotExist(err) {
-		t.Fatalf(".claude-runner/ unexpectedly under repo/: stat err=%v", err)
+	// .agent-runner/ must not live inside the git worktree.
+	if _, err := os.Stat(filepath.Join(repoDir, ".agent-runner")); !os.IsNotExist(err) {
+		t.Fatalf(".agent-runner/ unexpectedly under repo/: stat err=%v", err)
 	}
-	// .claude-runner/ lives at the task root.
-	if info, err := os.Stat(filepath.Join(taskRoot, ".claude-runner")); err != nil || !info.IsDir() {
-		t.Fatalf(".claude-runner/ missing at task root: stat err=%v info=%v", err, info)
+	// .agent-runner/ lives at the task root.
+	if info, err := os.Stat(filepath.Join(taskRoot, ".agent-runner")); err != nil || !info.IsDir() {
+		t.Fatalf(".agent-runner/ missing at task root: stat err=%v info=%v", err, info)
 	}
 }
 
@@ -509,7 +509,7 @@ func TestRunIssueWritesAttemptAndState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeRepo: %v", err)
 	}
-	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".claude-runner")
+	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".agent-runner")
 
 	stateBody, err := os.ReadFile(filepath.Join(stateDir, "state.json"))
 	if err != nil {
@@ -577,7 +577,7 @@ func TestRunIssueLockBlocksConcurrentAttempt(t *testing.T) {
 
 	repo := newRemoteRepo(t)
 	slug, _ := NormalizeRepo(repo)
-	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".claude-runner")
+	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".agent-runner")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		t.Fatalf("mkdir stateDir: %v", err)
 	}
@@ -631,7 +631,7 @@ func TestRunIssueLockTakesOverStaleLock(t *testing.T) {
 
 	repo := newRemoteRepo(t)
 	slug, _ := NormalizeRepo(repo)
-	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".claude-runner")
+	stateDir := filepath.Join(workspaces, issueTaskID(slug, 42), ".agent-runner")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		t.Fatalf("mkdir stateDir: %v", err)
 	}

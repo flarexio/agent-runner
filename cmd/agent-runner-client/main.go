@@ -15,12 +15,12 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/urfave/cli/v3"
 
-	runner "github.com/flarexio/claude-runner"
+	runner "github.com/flarexio/agent-runner"
 )
 
 func main() {
 	cmd := &cli.Command{
-		Name:  "claude-runner-client",
+		Name:  "agent-runner-client",
 		Usage: "Client for Claude Code Runner",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -221,7 +221,7 @@ func requestNATS(cmd *cli.Command, payload any, subjectSuffix string) (*runner.R
 	}
 
 	opts := []nats.Option{
-		nats.Name("Claude Runner Client"),
+		nats.Name("Agent Runner Client"),
 	}
 
 	if natsCreds != "" {
@@ -234,7 +234,7 @@ func requestNATS(cmd *cli.Command, payload any, subjectSuffix string) (*runner.R
 	}
 	defer nc.Drain()
 
-	topic := "edges." + edgeID + ".claude-runner"
+	topic := "edges." + edgeID + ".agent-runner"
 
 	data, err := json.Marshal(payload)
 	if err != nil {

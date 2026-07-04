@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-kit/kit/endpoint"
 
-	runner "github.com/flarexio/claude-runner"
+	runner "github.com/flarexio/agent-runner"
 )
 
 func AddRouters(r *gin.Engine, endpoints runner.EndpointSet) {

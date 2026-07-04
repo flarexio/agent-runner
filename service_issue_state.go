@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	stateDirName    = ".claude-runner"
+	stateDirName    = ".agent-runner"
 	attemptsDirName = "attempts"
 	stateFileName   = "state.json"
 	lockFileName    = "lock.json"

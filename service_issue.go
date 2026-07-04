@@ -96,7 +96,7 @@ func (svc *service) runIssueWorkflow(ctx context.Context, req RunIssueRequest) (
 
 	return &Result{
 		ID:     runID,
-		Output: fmt.Sprintf("Issue %s#%d accepted; claude-runner is processing in the background.", slug, req.IssueNumber),
+		Output: fmt.Sprintf("Issue %s#%d accepted; agent-runner is processing in the background.", slug, req.IssueNumber),
 	}, nil
 }
 
@@ -299,7 +299,7 @@ func (svc *service) claimIssue(ctx context.Context, repo string, number int, mod
 	if err := svc.github.AddLabels(ctx, repo, number, []string{LabelClaimedByClaude}); err != nil {
 		return fmt.Errorf("add %s: %w", LabelClaimedByClaude, err)
 	}
-	body := "claude-runner has claimed this issue and started working on it."
+	body := "agent-runner has claimed this issue and started working on it."
 	if modelLabel != "" || model != "" {
 		body += "\n\nModel selection:"
 		if modelLabel != "" {
@@ -316,7 +316,7 @@ func (svc *service) claimIssue(ctx context.Context, repo string, number int, mod
 }
 
 func (svc *service) reportIssueSuccess(ctx context.Context, repo string, number int, output string) {
-	body := "claude-runner finished this task.\n\n" + summarize(output)
+	body := "agent-runner finished this task.\n\n" + summarize(output)
 	if err := svc.github.CreateComment(ctx, repo, number, body); err != nil {
 		svc.log.Warn("comment success", zap.Error(err),
 			zap.String("repo", repo), zap.Int("issue_number", number))
@@ -343,7 +343,7 @@ func (svc *service) reportIssueFailure(ctx context.Context, repo string, number 
 
 func buildIssueFailureComment(report issueFailureReport, workRoot string) string {
 	var b strings.Builder
-	b.WriteString("claude-runner failed to complete this task.\n\n")
+	b.WriteString("agent-runner failed to complete this task.\n\n")
 	if report.runID != "" {
 		fmt.Fprintf(&b, "- Run ID: `%s`\n", report.runID)
 	}
@@ -374,7 +374,7 @@ func sanitizeFailureDetail(s, workRoot, workDir string) string {
 
 func buildIssuePrompt(repo string, issue *Issue) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are claude-runner working on GitHub issue #%d in %s.\n\n", issue.Number, repo)
+	fmt.Fprintf(&b, "You are agent-runner working on GitHub issue #%d in %s.\n\n", issue.Number, repo)
 	if issue.Title != "" {
 		fmt.Fprintf(&b, "Issue title: %s\n", issue.Title)
 	}

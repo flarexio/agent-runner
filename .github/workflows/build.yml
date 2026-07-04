@@ -20,17 +20,17 @@ jobs:
           go-version: '1.25'
 
       - name: Build server
-        run: go build cmd/claude-runner/main.go
+        run: go build cmd/agent-runner/main.go
 
       - name: Build client
-        run: go build cmd/claude-runner-client/main.go
+        run: go build cmd/agent-runner-client/main.go
 
       - name: Test
         run: go test -v ./...
 
       - name: Code Review with Claude
         if: github.event_name == 'pull_request'
-        uses: flarexio/claude-runner@v1
+        uses: flarexio/agent-runner@v1
         with:
           prompt: |
             Review all changed files in this repository.

@@ -1,5 +1,5 @@
-name: Claude Runner
-description: Run Claude Code prompts via claude-runner
+name: Agent Runner
+description: Run Claude Code prompts via agent-runner
 
 inputs:
   transport:
@@ -36,7 +36,7 @@ inputs:
 
 runs:
   using: docker
-  image: docker://flarexio/claude-runner-client:1
+  image: docker://flarexio/agent-runner-client:1
   entrypoint: /entrypoint.sh
   env:
     INPUT_TRANSPORT: ${{ inputs.transport }}

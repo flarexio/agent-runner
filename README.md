@@ -1,4 +1,4 @@
-# claude-runner
+# agent-runner
 
 A Go service that runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude -p`) remotely over NATS and HTTP. Use it for plain prompts, pull request reviews, and GitHub issue tasks where Claude implements the work and opens a PR.
 
@@ -6,17 +6,17 @@ A Go service that runs [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 ```bash
 # Server
-go install github.com/flarexio/claude-runner/cmd/claude-runner@latest
+go install github.com/flarexio/agent-runner/cmd/agent-runner@latest
 
 # Client
-go install github.com/flarexio/claude-runner/cmd/claude-runner-client@latest
+go install github.com/flarexio/agent-runner/cmd/agent-runner-client@latest
 ```
 
 Prerequisites: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated, Go 1.25+.
 
 ## Configure
 
-Drop a `config.yaml` under `~/.flarex/claude-runner/`. Start from [`config.example.yaml`](./config.example.yaml) — every knob is commented inline.
+Drop a `config.yaml` under `~/.flarex/agent-runner/`. Start from [`config.example.yaml`](./config.example.yaml) — every knob is commented inline.
 
 For NATS transport, also drop two files in the same directory:
 
@@ -30,8 +30,8 @@ For service architecture, lifecycle, and the issue agent-task protocol, see [AGE
 ## Run
 
 ```bash
-claude-runner            # NATS only
-claude-runner --http     # also enable HTTP on :8080
+agent-runner            # NATS only
+agent-runner --http     # also enable HTTP on :8080
 ```
 
 ### Docker
@@ -40,15 +40,15 @@ claude-runner --http     # also enable HTTP on :8080
 # NATS
 docker run -d \
   -v ~/.claude:/root/.claude \
-  -v ~/.flarex/claude-runner:/root/.flarex/claude-runner \
-  flarexio/claude-runner
+  -v ~/.flarex/agent-runner:/root/.flarex/agent-runner \
+  flarexio/agent-runner
 
 # HTTP
 docker run -d \
   -v ~/.claude:/root/.claude \
-  -v ~/.flarex/claude-runner:/root/.flarex/claude-runner \
+  -v ~/.flarex/agent-runner:/root/.flarex/agent-runner \
   -p 8080:8080 \
-  flarexio/claude-runner --http
+  flarexio/agent-runner --http
 ```
 
 ## Call it
@@ -84,18 +84,18 @@ Response is `{id, output, error}`. When `repo` is set the runner clones it into 
 }
 ```
 
-Validates and claims synchronously, then runs Claude in the background. The HTTP response returns after the claim phase with `output: "...accepted; claude-runner is processing in the background."`. Final success/failure is posted as a comment on the GitHub issue. The server must have a GitHub token configured.
+Validates and claims synchronously, then runs Claude in the background. The HTTP response returns after the claim phase with `output: "...accepted; agent-runner is processing in the background."`. Final success/failure is posted as a comment on the GitHub issue. The server must have a GitHub token configured.
 
 ### CLI client
 
 ```bash
 # Plain prompt
-claude-runner-client \
+agent-runner-client \
   --transport http --endpoint http://localhost:8080 \
   --prompt "Review this code"
 
 # Issue task
-claude-runner-client \
+agent-runner-client \
   --transport http --endpoint http://localhost:8080 \
   --event issue \
   --repo https://github.com/user/repo.git \
@@ -110,7 +110,7 @@ Add `NATS_CREDS` (content of `user.creds`) and `EDGE_ID` to your repository's **
 
 ### CI / PR review
 
-The same step works for `pull_request`, `push`, and `workflow_dispatch`. On a PR, `base-ref` and `pr-number` are populated and claude-runner generates a PR diff for Claude to review against.
+The same step works for `pull_request`, `push`, and `workflow_dispatch`. On a PR, `base-ref` and `pr-number` are populated and agent-runner generates a PR diff for Claude to review against.
 
 ```yaml
 on:
@@ -123,7 +123,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: flarexio/claude-runner@v1
+      - uses: flarexio/agent-runner@v1
         with:
           prompt: |
             Review all changed files in this repository.
@@ -152,7 +152,7 @@ jobs:
     if: github.event.label.name == 'agent-ready'
     runs-on: ubuntu-latest
     steps:
-      - uses: flarexio/claude-runner@v1
+      - uses: flarexio/agent-runner@v1
         with:
           event: issue
           repo: ${{ github.server_url }}/${{ github.repository }}.git
@@ -163,12 +163,12 @@ jobs:
 
 The runner only acts on issues that pass validation: open, body contains `<!-- agent-task:v1 -->`, required labels (`type:agent-task`, `agent:claude-code`, `agent-ready`, `agent-approved`), no excluded labels (`claimed-by-claude`, `agent-blocked`, `security-sensitive`). Failed issue runs preserve the workspace under `workDir` for inspection — see [AGENTS.md](./AGENTS.md) for the on-disk layout.
 
-## One-shot CLI: `claude-runner run-issue`
+## One-shot CLI: `agent-runner run-issue`
 
 Runs the full GitHub issue agent-task protocol — claim, run Claude, post results — in a single foreground invocation. Designed to be invocable directly by AI agents as a skill.
 
 ```bash
-claude-runner run-issue --repo owner/repo --issue-number 42
+agent-runner run-issue --repo owner/repo --issue-number 42
 ```
 
 Useful flags: `--path` (config directory), `--ref` (branch), `--github-token` (overrides config token; env: `GITHUB_TOKEN`).

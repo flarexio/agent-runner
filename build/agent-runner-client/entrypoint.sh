@@ -23,4 +23,4 @@ set -- --transport "$INPUT_TRANSPORT"
 [ -n "$INPUT_ENDPOINT" ]     && set -- "$@" --endpoint "$INPUT_ENDPOINT"
 [ -n "$INPUT_OUTPUT_FILE" ]  && set -- "$@" --output-file "$INPUT_OUTPUT_FILE"
 
-exec claude-runner-client "$@"
+exec agent-runner-client "$@"
